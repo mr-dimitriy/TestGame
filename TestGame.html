@@ -205,7 +205,9 @@
         isHost: false,
         myTurn: false,    // true если сейчас мой ход
         isGameOver: false,
-        deckSeed: null
+        deckSeed: null,
+        hasStood: false,
+        opponentHasStood: false
       };
 
       const SUITS = ['♠', '♥', '♦', '♣'];
@@ -326,11 +328,11 @@
         gameState.deckSeed = Math.floor(Math.random() * 1e9);
         gameState.deck = createDeck(gameState.deckSeed);
         
-        // Раздача
-        for (let i = 0; i < 1; i++) {
-          gameState.playerHand.push(draw());
-          gameState.opponentHand.push(draw());
-        }
+        // // Раздача
+        // for (let i = 0; i < 1; i++) {
+        //   gameState.playerHand.push(draw());
+        //   gameState.opponentHand.push(draw());
+        // }
         
         gameState.myTurn = true; // Хост ходит первым
         updateUI();
@@ -375,19 +377,31 @@
 
       function playerStand() {
         if (!gameState.myTurn || gameState.isGameOver) return;
+
+        gameState.hasStood = true;
         gameState.myTurn = false;
         updateUI();
         sendToOpponent({ type: 'stand' });
+        
+        if (gameState.hasStood && gameState.opponentHasStood) {
+          setTimeout(compareScores, 500);
+        }
       }
 
       function compareScores() {
+        if (gameState.isGameOver) return;
+
         const p = calcScore(gameState.playerHand);
         const o = calcScore(gameState.opponentHand);
         gameState.isGameOver = true;
+        gameState.myTurn = false;
         updateUI();
         
         let result = '';
-        if (p > o) result = 'win';
+        if (p > 21 && o > 21) result = 'draw';
+        else if (p > 21) result = 'lose';
+        else if (o > 21) result = 'win';
+        else if (p > o) result = 'win';
         else if (p < o) result = 'lose';
         else result = 'draw';
         
@@ -478,7 +492,7 @@
             navigator.clipboard.writeText(UI.roomCode.textContent.replace('Код: ', ''));
             UI.connectionStatus.textContent = '✅ Скопировано!';
           };
-          
+
           setConnectionStatus(false, '🟡 Создание...');
           await setupConnection(true);
           dataChannel = pc.createDataChannel('bj');
@@ -511,6 +525,7 @@
           
           if (mode === 'offer') {
             html = `<span class="step-indicator">Шаг 1/2</span><h3>📤 Отправьте это противнику</h3>
+                    <h4 id="room_code">${UI.roomCode.textContent}</h4>
                     <textarea id="d" readonly>${JSON.stringify(sdp)}</textarea>
                     <button onclick="navigator.clipboard.writeText(document.getElementById('d').value);alert('OK')">📋 Копировать</button>
                     <hr style="margin:1rem 0;opacity:0.2"><span class="step-indicator">Шаг 2/2</span><h3>📥 Вставьте ответ</h3>
@@ -573,8 +588,13 @@
           }
         } 
         else if (msg.type === 'stand') {
+          gameState.opponentHasStood = true;
           gameState.myTurn = true;
           updateUI();
+
+          if (gameState.hasStood && gameState.opponentHasStood) {
+            setTimeout(compareScores, 500);
+          }
         } 
         else if (msg.type === 'bust') {
           endGame('win');
@@ -582,6 +602,7 @@
         else if (msg.type === 'result') {
           gameState.isGameOver = true;
           updateUI();
+
           if (msg.result === 'lose') { // Если противник говорит что я проиграл -> я выиграл
             setStatus('🏆 Вы победили!');
             showRecoveryForm();
@@ -591,16 +612,45 @@
             setStatus('🤝 Ничья.');
           }
         }
+        else if (msg.type === 'restart') {
+          // ← ДОБАВИТЬ: Сброс для клиента
+          gameState.playerHand = msg.clientHand;
+          gameState.opponentHand = msg.hostHand;
+          gameState.deckSeed = msg.seed;
+          gameState.deck = createDeck(gameState.deckSeed);
+          gameState.hasStood = false;
+          gameState.opponentHasStood = false;
+          gameState.isGameOver = false;
+          gameState.myTurn = false;
+          
+          UI.recoveryPlaceholder.classList.add('hidden');
+          UI.recoveryPlaceholder.setAttribute('aria-hidden', 'false');
+          updateUI();
+        }
+        else if (msg.type === 'restart_request') {
+          startNewRound();
+          // Отправляем свои карты хосту для синхронизации
+          sendToOpponent({
+            type: 'restart',
+            hostHand: gameState.opponentHand, // Для хоста это его карты
+            clientHand: gameState.playerHand, // Для хоста это карты клиента
+            seed: gameState.deckSeed
+          });
+        }
       }
 
       // 🔹 Привязка событий
       UI.btnHit.addEventListener('click', playerHit);
       UI.btnStand.addEventListener('click', playerStand);
       UI.btnNew.addEventListener('click', () => {
-        if (gameState.isMultiplayer) {
-          // Перезагрузка страницы для чистого сброса P2P сессии
-          location.reload();
+        if (gameState.isMultiplayer && gameState.isHost && !gameState.isGameOver) {
+          startNewRound();
+          sendToOpponent({ type: 'restart_request' });
+        } else if (gameState.isMultiplayer) {
+          // Клиент ждёт хоста
+          setStatus('🟡 Ожидание начала новой игры от хоста...');
         } else {
+          // Одиночная игра
           gameState.isMultiplayer = false;
           WebRTC.reset?.();
           setConnectionStatus(false);
@@ -608,6 +658,30 @@
           startGameAsHost();
         }
       });
+
+
+      function startNewRound() {
+        gameState.hasStood = false;
+        gameState.opponentHasStood = false;
+        gameState.playerHand = [];
+        gameState.opponentHand = [];
+        gameState.isGameOver = false;
+        gameState.myTurn = gameState.isHost; // Хост ходит первым
+        
+        // Новая колода
+        gameState.deckSeed = Math.floor(Math.random() * 1e9);
+        gameState.deck = createDeck(gameState.deckSeed);
+        
+        // Раздача
+        for (let i = 0; i < 2; i++) {
+          gameState.playerHand.push(draw());
+          gameState.opponentHand.push(draw());
+        }
+        
+        UI.recoveryPlaceholder.classList.add('hidden');
+        UI.recoveryPlaceholder.setAttribute('aria-hidden', 'true');
+        updateUI();
+      }
 
       document.getElementById('btn-create-room').addEventListener('click', WebRTC.createRoom);
       document.getElementById('btn-join-room').addEventListener('click', WebRTC.joinRoom);

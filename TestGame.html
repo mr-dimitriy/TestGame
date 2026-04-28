@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -26,13 +26,11 @@
     .game-header h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
     .subtitle { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem; }
     
-    /* 🔹 Индикатор подключения */
     .connection-badge {
       display: inline-flex; align-items: center; gap: 0.5rem;
       padding: 0.25rem 0.75rem; border-radius: 99px;
       font-size: 0.8rem; font-weight: 600; margin-bottom: 0.5rem;
       background: rgba(239, 68, 68, 0.2); color: var(--danger);
-      transition: all 0.2s ease;
     }
     .connection-badge.connected { background: rgba(16, 185, 129, 0.2); color: var(--accent); }
     .connection-badge::before {
@@ -90,7 +88,6 @@
       to { opacity: 1; transform: translateY(0); }
     }
     
-    /* 🔹 Модальное окно для SDP */
     .sdp-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       background: rgba(0,0,0,0.85); display: flex;
@@ -109,6 +106,11 @@
     }
     .sdp-modal-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .sdp-modal button { flex: 1; min-width: 120px; }
+    
+    .debug-info {
+      font-size: 0.75rem; color: var(--text-muted);
+      margin-top: 0.5rem; font-family: monospace;
+    }
   </style>
 </head>
 <body>
@@ -116,11 +118,9 @@
     <header class="game-header">
       <h1>🃏 Blackjack</h1>
       <p class="subtitle">Выиграть, чтобы продолжить восстановление пароля</p>
-      <!-- 🔹 Индикатор подключения -->
       <div id="connection-badge" class="connection-badge">🔴 Оффлайн</div>
     </header>
 
-    <!-- 🔹 Блок настройки мультиплеера -->
     <section id="multiplayer-setup" class="recovery-form">
       <h3>🎮 Онлайн-игра (2 игрока)</h3>
       <div id="room-create">
@@ -134,6 +134,7 @@
         <button id="btn-join-room" type="button">🔗 Присоединиться</button>
       </div>
       <div id="connection-status" style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--text-muted);"></div>
+      <div id="debug-info" class="debug-info"></div>
     </section>
 
     <section class="table" aria-label="Игровой стол">
@@ -153,23 +154,18 @@
       <button id="btn-new" type="button">🔄 Новая игра</button>
     </div>
 
-    <div id="status" class="status" aria-live="polite">Настройте подключение или начните одиночную игру.</div>
+    <div id="status" class="status" aria-live="polite">Нажмите "Новая игра" для одиночной или настройте подключение.</div>
 
     <section id="recovery-placeholder" class="recovery-form hidden" aria-hidden="true">
       <h2>✅ Вы победили! 🎉</h2>
       <p style="margin-top: 0.5rem; font-size: 0.9rem;">Вставьте сюда свою форму восстановления пароля:</p>
-      <!-- <form id="real-recovery-form">...</form> -->
     </section>
   </main>
 
-    <script>
+  <script>
     (function () {
       'use strict';
 
-      // =====================================================================
-      // 🔹 ГЛОБАЛЬНОЕ СОСТОЯНИЕ И ИНТЕРФЕЙС
-      // =====================================================================
-      
       const UI = {
         playerCards: document.getElementById('player-cards'),
         opponentCards: document.getElementById('opponent-cards'),
@@ -182,6 +178,7 @@
         status: document.getElementById('status'),
         connectionBadge: document.getElementById('connection-badge'),
         connectionStatus: document.getElementById('connection-status'),
+        debugInfo: document.getElementById('debug-info'),
         multiplayerSetup: document.getElementById('multiplayer-setup'),
         roomCode: document.getElementById('room-code'),
         btnCopyCode: document.getElementById('btn-copy-code'),
@@ -190,26 +187,15 @@
       };
 
       const gameState = {
-        deck: [],
-        playerHand: [],
-        opponentHand: [],
-        isPlayerTurn: false,
-        isGameOver: false,
-        isMultiplayer: false,
-        isHost: false,
-        peerId: null,
-        opponentPeerId: null,
-        deckSeed: null,
-        // 🔹 КРИТИЧНО: отслеживаем состояние сигнализации
-        signalingState: 'none' // 'none' | 'waiting-offer' | 'have-offer' | 'connected'
+        deck: [], playerHand: [], opponentHand: [],
+        isPlayerTurn: false, isGameOver: false,
+        isMultiplayer: false, isHost: false,
+        peerId: null, opponentPeerId: null,
+        deckSeed: null, connectionTimeout: null
       };
 
       const SUITS = ['♠', '♥', '♦', '♣'];
       const VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-
-      // =====================================================================
-      // 🔹 УТИЛИТЫ
-      // =====================================================================
 
       function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
       function generateRoomCode() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
@@ -265,10 +251,6 @@
         return gameState.deck.pop();
       }
 
-      // =====================================================================
-      // 🔹 РЕНДЕРИНГ
-      // =====================================================================
-
       function renderCard(card, container) {
         const el = document.createElement('div');
         el.className = `card ${card.isRed ? 'red' : ''}`;
@@ -285,11 +267,9 @@
         UI.opponentScore.textContent = calcScore(gameState.opponentHand);
       }
 
-      function setStatus(msg) { 
-        UI.status.textContent = msg; 
-        console.log('[Game]', msg);
-      }
-
+      function setStatus(msg) { UI.status.textContent = msg; console.log('[Game]', msg); }
+      function setDebug(msg) { UI.debugInfo.textContent = msg; }
+      
       function setButtons(hit, stand, newGame) {
         UI.btnHit.disabled = !hit;
         UI.btnStand.disabled = !stand;
@@ -307,10 +287,6 @@
         UI.recoveryPlaceholder.setAttribute('aria-hidden', 'false');
         setStatus('');
       }
-
-      // =====================================================================
-      // 🔹 ЛОГИКА ИГРЫ
-      // =====================================================================
 
       function resetGameState() {
         gameState.playerHand = [];
@@ -342,10 +318,10 @@
           return;
         }
         
-        // for (let i = 0; i < 2; i++) {
-        //   gameState.playerHand.push(draw());
-        //   gameState.opponentHand.push(draw());
-        // }
+        for (let i = 0; i < 2; i++) {
+          gameState.playerHand.push(draw());
+          gameState.opponentHand.push(draw());
+        }
         
         gameState.isPlayerTurn = true;
         setStatus(gameState.isMultiplayer 
@@ -365,33 +341,23 @@
 
       function playerHit() {
         if (!gameState.isPlayerTurn || gameState.isGameOver) return;
-        
         const card = draw();
         gameState.playerHand.push(card);
         render();
-        
         if (gameState.isMultiplayer) {
           sendToOpponent({ type: 'card_drawn', player: 'you', card });
         }
-        
         if (calcScore(gameState.playerHand) > 21) {
-          if (gameState.isMultiplayer) {
-            sendToOpponent({ type: 'game_over', result: 'player_bust' });
-          }
+          if (gameState.isMultiplayer) sendToOpponent({ type: 'game_over', result: 'player_bust' });
           endGame('💥 Перебор! Вы проиграли.');
         }
       }
 
       function playerStand() {
         if (!gameState.isPlayerTurn || gameState.isGameOver) return;
-        
-        if (gameState.isMultiplayer) {
-          sendToOpponent({ type: 'stand', player: 'you' });
-        }
-        
+        if (gameState.isMultiplayer) sendToOpponent({ type: 'stand', player: 'you' });
         gameState.isPlayerTurn = false;
         setButtons(false, false, false);
-        
         if (gameState.isMultiplayer) {
           setStatus('🟡 Ожидание хода противника...');
         } else {
@@ -428,7 +394,6 @@
       function decideWinner() {
         const playerScore = calcScore(gameState.playerHand);
         const opponentScore = calcScore(gameState.opponentHand);
-        
         gameState.isGameOver = true;
         setButtons(false, false, true);
         
@@ -450,13 +415,8 @@
           setStatus('🤝 Ничья. Сыграйте ещё раз.');
         }
         
-        if (gameState.isMultiplayer) {
-          sendToOpponent({ type: 'game_over', result });
-        }
-        
-        if (result === 'win') {
-          showRecoveryForm();
-        }
+        if (gameState.isMultiplayer) sendToOpponent({ type: 'game_over', result });
+        if (result === 'win') showRecoveryForm();
       }
 
       function endGame(msg) {
@@ -466,81 +426,55 @@
       }
 
       // =====================================================================
-      // 🔹 WEBRTC — ИСПРАВЛЕННАЯ ВЕРСИЯ С ПРОВЕРКОЙ СОСТОЯНИЙ
+      // 🔹 WEBRTC С ИСПОЛЬЗОВАНИЕМ STUN СЕРВЕРОВ
       // =====================================================================
 
       const WebRTC = (function() {
         let pc = null;
         let dataChannel = null;
+        let iceCandidates = [];
+        let connectionCheckInterval = null;
         
-        const CONFIG = { 
-          iceServers: [] 
-          // Для отладки можно добавить: 
-          // iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        // 🔹 ПУБЛИЧНЫЕ STUN СЕРВЕРА (ОБЯЗАТЕЛЬНО!)
+        const CONFIG = {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+          ]
         };
 
-        // 🔹 КРИТИЧНО: безопасная установка удалённого описания
-        async function safeSetRemoteDescription(description) {
-          if (!pc) throw new Error('RTCPeerConnection не инициализирован');
-          
-          const currentState = pc.signalingState;
-          const descType = description.type;
-          
-          console.log(`🔍 SDP Check: текущее=${currentState}, пытаемся установить=${descType}`);
-          
-          // 🔹 ПРАВИЛА состояний сигнализации:
-          // - В состоянии 'stable' можно принимать только 'offer'
-          // - В состоянии 'have-local-offer' можно принимать только 'answer'
-          // - В состоянии 'have-remote-offer' можно принимать только 'answer' (pranswer)
-          
-          if (descType === 'offer' && currentState !== 'stable') {
-            throw new Error(`Нельзя установить offer в состоянии ${currentState}. Ожидается 'stable'.`);
-          }
-          if (descType === 'answer' && currentState !== 'have-local-offer') {
-            throw new Error(`Нельзя установить answer в состоянии ${currentState}. Ожидается 'have-local-offer'.`);
-          }
-          
-          try {
-            await pc.setRemoteDescription(description);
-            console.log('✅ setRemoteDescription успешно');
-          } catch (err) {
-            console.error('❌ setRemoteDescription ошибка:', err);
-            // 🔹 Попытка восстановления: если ошибка состояния, сбрасываем соединение
-            if (err.message.includes('wrong state') || err.message.includes('stable')) {
-              console.warn('🔄 Попытка сброса соединения из-за рассинхрона состояний...');
-              resetConnection();
-              throw new Error('Рассинхрон соединения. Нажмите "Новая игра" и попробуйте подключиться заново.');
-            }
-            throw err;
-          }
-        }
-
-        function resetConnection() {
-          if (dataChannel) dataChannel.close();
-          if (pc) pc.close();
-          pc = null;
-          dataChannel = null;
-          gameState.signalingState = 'none';
-          console.log('🔄 Соединение сброшено');
+        function log(msg) {
+          console.log('[WebRTC]', msg);
+          setDebug(msg);
         }
 
         async function setupConnection(isOfferer) {
-          resetConnection(); // 🔹 Всегда начинаем с чистого состояния
-          
+          resetConnection();
           pc = new RTCPeerConnection(CONFIG);
+          iceCandidates = [];
+          
+          log('Создание RTCPeerConnection');
           
           pc.onicecandidate = (e) => {
             if (e.candidate) {
-              console.log('🧊 ICE candidate:', e.candidate.candidate ? 'есть' : 'null');
+              iceCandidates.push(e.candidate);
+              log(`ICE кандидат: ${e.candidate.candidate ? 'добавлен' : 'null'}`);
             }
+          };
+          
+          pc.onicecandidateerror = (e) => {
+            console.warn('ICE ошибка:', e);
           };
           
           pc.onconnectionstatechange = () => {
             const state = pc.connectionState;
-            console.log('🔗 Connection state:', state);
+            log(`Состояние соединения: ${state}`);
             
             if (state === 'connected') {
-              gameState.signalingState = 'connected';
+              clearTimeout(gameState.connectionTimeout);
               setConnectionStatus(true, '✅ Соединение установлено!');
               UI.multiplayerSetup.classList.add('hidden');
               UI.opponentLabel.textContent = gameState.isHost ? 'Игрок 2' : 'Игрок 1';
@@ -548,16 +482,25 @@
             } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
               setConnectionStatus(false, '❌ Соединение разорвано');
               gameState.isMultiplayer = false;
-              gameState.signalingState = 'none';
               setButtons(false, false, true);
+            } else if (state === 'checking') {
+              log('🔍 Проверка соединения...');
             }
           };
           
           pc.ondatachannel = (e) => {
-            console.log('📡 Получен data channel');
+            log('📡 Получен data channel');
             dataChannel = e.channel;
             setupDataChannel();
           };
+          
+          // 🔹 Таймаут на соединение (30 секунд)
+          gameState.connectionTimeout = setTimeout(() => {
+            if (pc.connectionState !== 'connected') {
+              log('⏰ Таймаут соединения');
+              setConnectionStatus(false, '⏰ Превышено время ожидания. Попробуйте снова.');
+            }
+          }, 30000);
           
           return pc;
         }
@@ -566,7 +509,7 @@
           if (!dataChannel) return;
           
           dataChannel.onopen = () => {
-            console.log('✅ Data channel open');
+            log('✅ Data channel открыт');
             sendToOpponent({ type: 'peer_info', peerId: gameState.peerId });
           };
           
@@ -580,44 +523,60 @@
           };
           
           dataChannel.onclose = () => {
-            console.log('❌ Data channel closed');
+            log('❌ Data channel закрыт');
             setConnectionStatus(false, '❌ Противник отключился');
             gameState.isMultiplayer = false;
-            gameState.signalingState = 'none';
+          };
+          
+          dataChannel.onerror = (err) => {
+            console.error('❌ Data channel ошибка:', err);
           };
         }
 
-        // 🔹 Создание комнаты (ХОСТ)
+        function resetConnection() {
+          if (connectionCheckInterval) clearInterval(connectionCheckInterval);
+          if (gameState.connectionTimeout) clearTimeout(gameState.connectionTimeout);
+          if (dataChannel) {
+            try { dataChannel.close(); } catch(e) {}
+          }
+          if (pc) {
+            try { pc.close(); } catch(e) {}
+          }
+          pc = null;
+          dataChannel = null;
+          iceCandidates = [];
+          log('🔄 Соединение сброшено');
+        }
+
         async function createRoom() {
           try {
             gameState.isHost = true;
             gameState.isMultiplayer = true;
             gameState.peerId = generatePeerId();
-            gameState.signalingState = 'none';
             
             UI.roomCode.textContent = `Код: ${generateRoomCode()}`;
             UI.btnCopyCode.classList.remove('hidden');
             UI.btnCopyCode.onclick = () => {
               const code = UI.roomCode.textContent.replace('Код: ', '');
               navigator.clipboard.writeText(code);
-              UI.connectionStatus.textContent = '✅ Код скопирован! Отправьте его противнику.';
+              UI.connectionStatus.textContent = '✅ Код скопирован!';
             };
             
             setConnectionStatus(false, '🟡 Создание комнаты...');
+            log('Создание комнаты (хост)');
             
             await setupConnection(true);
-            
-            // 🔹 Создаём data channel ТОЛЬКО на стороне, создающей offer
             dataChannel = pc.createDataChannel('blackjack');
             setupDataChannel();
             
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
-            // 🔹 Обновляем состояние сигнализации
-            gameState.signalingState = 'have-local-offer';
+            // 🔹 Ждём немного для сбора ICE кандидатов
+            await delay(1000);
             
-            showSDPModal('offer', offer);
+            log('Готово offer для отправки');
+            showSDPModal('offer', pc.localDescription);
             
           } catch (err) {
             console.error('❌ Ошибка создания комнаты:', err);
@@ -626,25 +585,22 @@
           }
         }
 
-        // 🔹 Присоединение (КЛИЕНТ)
         async function joinRoom() {
           try {
             const code = UI.joinCode.value.trim().toUpperCase();
             if (code.length !== 6) {
-              UI.connectionStatus.textContent = '❌ Неверный формат кода (6 символов)';
+              UI.connectionStatus.textContent = '❌ Неверный код (6 символов)';
               return;
             }
             
             gameState.isHost = false;
             gameState.isMultiplayer = true;
             gameState.peerId = generatePeerId();
-            gameState.signalingState = 'waiting-offer';
             
-            setConnectionStatus(false, '🟡 Ожидание предложения от хоста...');
+            setConnectionStatus(false, '🟡 Ожидание offer от хоста...');
+            log('Подключение к комнате (клиент)');
             
             await setupConnection(false);
-            // 🔹 Клиент НЕ создаёт data channel — он придёт от хоста
-            
             showSDPModal('waiting_offer');
             
           } catch (err) {
@@ -654,9 +610,7 @@
           }
         }
 
-        // 🔹 Модальное окно для обмена SDP
         function showSDPModal(mode, sdp = null) {
-          // Удаляем старые модальные окна если есть
           const oldModal = document.querySelector('.sdp-modal');
           if (oldModal) oldModal.remove();
           
@@ -669,25 +623,25 @@
             content = `
               <h3>📤 Шаг 1: Отправьте это противнику</h3>
               <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.5rem;">
-                Скопируйте код ниже и отправьте второму игроку:
+                Скопируйте код и отправьте второму игроку:
               </p>
               <textarea id="sdp-offer" readonly>${JSON.stringify(sdp)}</textarea>
               <div class="sdp-modal-buttons">
                 <button id="btn-copy-offer" type="button">📋 Копировать</button>
-                <button id="btn-close-modal" type="button">✕ Закрыть</button>
               </div>
               <hr style="margin:1rem 0;border-color:var(--surface-hover);">
-              <h3>📥 Шаг 2: Вставьте ответ от противника</h3>
-              <textarea id="sdp-answer-input" placeholder="Вставьте сюда ответ (answer) от противника..."></textarea>
+              <h3>📥 Шаг 2: Вставьте ответ</h3>
+              <textarea id="sdp-answer-input" placeholder="Вставьте answer от противника..."></textarea>
               <button id="btn-apply-answer" type="button" style="background:var(--accent);color:#fff;">✅ Подключиться</button>
+              <button id="btn-close-modal" type="button" style="margin-left:0.5rem;">✕ Отмена</button>
             `;
           } else if (mode === 'waiting_offer') {
             content = `
-              <h3>📥 Шаг 1: Вставьте предложение от хоста</h3>
+              <h3>📥 Шаг 1: Вставьте offer от хоста</h3>
               <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.5rem;">
-                Попросите создателя комнаты отправить вам код "Предложение":
+                Попросите хоста отправить вам код:
               </p>
-              <textarea id="sdp-offer-input" placeholder="Вставьте сюда предложение (offer) от хоста..."></textarea>
+              <textarea id="sdp-offer-input" placeholder="Вставьте offer от хоста..."></textarea>
               <button id="btn-apply-offer" type="button" style="background:var(--accent);color:#fff;">✅ Применить</button>
               <button id="btn-close-modal" type="button" style="margin-left:0.5rem;">✕ Отмена</button>
             `;
@@ -695,16 +649,16 @@
             content = `
               <h3>📤 Шаг 2: Отправьте это хосту</h3>
               <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.5rem;">
-                Скопируйте код ниже и отправьте создателю комнаты:
+                Скопируйте и отправьте хосту:
               </p>
               <textarea id="sdp-answer" readonly>${JSON.stringify(sdp)}</textarea>
               <div class="sdp-modal-buttons">
                 <button id="btn-copy-answer" type="button">📋 Копировать</button>
-                <button id="btn-close-modal" type="button">✕ Закрыть</button>
               </div>
               <p style="font-size:0.85rem;color:var(--accent);margin-top:1rem;">
-                ✅ После того как хост применит ваш ответ, игра начнётся автоматически!
+                ✅ Игра начнётся после применения ответа хостом!
               </p>
+              <button id="btn-close-modal" type="button" style="margin-top:0.5rem;">✕ Закрыть</button>
             `;
           }
           
@@ -719,69 +673,51 @@
           
           if (mode === 'offer') {
             modal.querySelector('#btn-copy-offer').onclick = () => {
-              const text = modal.querySelector('#sdp-offer').value;
-              navigator.clipboard.writeText(text);
-              UI.connectionStatus.textContent = '✅ Предложение скопировано!';
+              navigator.clipboard.writeText(modal.querySelector('#sdp-offer').value);
+              UI.connectionStatus.textContent = '✅ Offer скопирован!';
             };
             modal.querySelector('#btn-apply-answer').onclick = async () => {
               try {
                 const answerText = modal.querySelector('#sdp-answer-input').value.trim();
-                if (!answerText) {
-                  alert('❌ Вставьте ответ от противника');
-                  return;
-                }
+                if (!answerText) { alert('❌ Вставьте answer'); return; }
                 const answer = JSON.parse(answerText);
+                if (answer.type !== 'answer') throw new Error('Это не answer');
                 
-                // 🔹 ПРОВЕРКА: должно быть типа 'answer'
-                if (answer.type !== 'answer') {
-                  throw new Error('Это не ответ (answer), а ' + answer.type);
-                }
-                
-                await safeSetRemoteDescription(answer);
+                await pc.setRemoteDescription(answer);
+                log('✅ Answer применён, ожидание соединения...');
                 modal.remove();
                 UI.connectionStatus.textContent = '🟡 Установление соединения...';
               } catch (e) {
-                console.error('❌ Ошибка применения ответа:', e);
-                alert('❌ Ошибка: ' + e.message + '\n\nПопробуйте начать подключение заново.');
-                modal.remove();
-                resetConnection();
+                alert('❌ Ошибка: ' + e.message);
               }
             };
           } else if (mode === 'waiting_offer') {
             modal.querySelector('#btn-apply-offer').onclick = async () => {
               try {
                 const offerText = modal.querySelector('#sdp-offer-input').value.trim();
-                if (!offerText) {
-                  alert('❌ Вставьте предложение от хоста');
-                  return;
-                }
+                if (!offerText) { alert('❌ Вставьте offer'); return; }
                 const offer = JSON.parse(offerText);
+                if (offer.type !== 'offer') throw new Error('Это не offer');
                 
-                // 🔹 ПРОВЕРКА: должно быть типа 'offer'
-                if (offer.type !== 'offer') {
-                  throw new Error('Это не предложение (offer), а ' + offer.type);
-                }
-                
-                await safeSetRemoteDescription(offer);
-                gameState.signalingState = 'have-remote-offer';
+                await pc.setRemoteDescription(offer);
+                log('✅ Offer применён, создание answer...');
                 
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 
+                // 🔹 Ждём ICE кандидаты
+                await delay(1000);
+                
                 modal.remove();
-                showSDPModal('send_answer', answer);
+                showSDPModal('send_answer', pc.localDescription);
               } catch (e) {
-                console.error('❌ Ошибка применения предложения:', e);
-                alert('❌ Ошибка: ' + e.message + '\n\nУбедитесь, что вставили правильный код от хоста.');
-                modal.remove();
-                resetConnection();
+                alert('❌ Ошибка: ' + e.message);
               }
             };
           } else if (mode === 'send_answer') {
             modal.querySelector('#btn-copy-answer').onclick = () => {
-              const text = modal.querySelector('#sdp-answer').value;
-              navigator.clipboard.writeText(text);
-              UI.connectionStatus.textContent = '✅ Ответ скопирован! Отправьте его хосту.';
+              navigator.clipboard.writeText(modal.querySelector('#sdp-answer').value);
+              UI.connectionStatus.textContent = '✅ Answer скопирован! Отправьте хосту.';
             };
           }
         }
@@ -791,12 +727,11 @@
             dataChannel.send(JSON.stringify({ ...msg, from: gameState.peerId }));
             return true;
           }
-          console.warn('⚠️ Data channel not ready, state:', dataChannel?.readyState);
           return false;
         }
 
         function handleIncomingMessage(msg) {
-          console.log('📩 Получено:', msg.type, 'от:', msg.from);
+          log(`📩 ${msg.type} от ${msg.from}`);
           
           switch (msg.type) {
             case 'peer_info':
@@ -838,24 +773,14 @@
                 if (msg.result === 'win') showRecoveryForm();
               }
               break;
-            case 'restart':
-              handleRestart();
-              break;
           }
         }
 
-        return {
-          createRoom,
-          joinRoom,
-          send,
-          reset: resetConnection
-        };
+        return { createRoom, joinRoom, send, reset: resetConnection };
       })();
 
       function sendToOpponent(msg) {
-        if (gameState.isMultiplayer) {
-          WebRTC.send(msg);
-        }
+        if (gameState.isMultiplayer) WebRTC.send(msg);
       }
 
       function handleRestart() {
@@ -864,23 +789,16 @@
         startGame();
       }
 
-      // =====================================================================
-      // 🔹 ИНИЦИАЛИЗАЦИЯ
-      // =====================================================================
-
       UI.btnHit.addEventListener('click', playerHit);
       UI.btnStand.addEventListener('click', playerStand);
       UI.btnNew.addEventListener('click', () => {
         if (gameState.isMultiplayer && gameState.isHost && !gameState.isGameOver) {
           sendToOpponent({ type: 'restart' });
         }
-        if (gameState.isMultiplayer && gameState.signalingState === 'connected') {
-          // Перезапуск игры без разрыва соединения
+        if (gameState.isMultiplayer && UI.connectionBadge.classList.contains('connected')) {
           handleRestart();
         } else {
-          // Новая одиночная игра или сброс
           gameState.isMultiplayer = false;
-          gameState.signalingState = 'none';
           WebRTC.reset?.();
           setConnectionStatus(false);
           UI.multiplayerSetup.classList.remove('hidden');
@@ -891,8 +809,7 @@
       document.getElementById('btn-create-room').addEventListener('click', WebRTC.createRoom);
       document.getElementById('btn-join-room').addEventListener('click', WebRTC.joinRoom);
 
-      // Старт
-      setStatus('Нажмите "Новая игра" для одиночной или настройте подключение для игры вдвоём.');
+      setStatus('Нажмите "Новая игра" для одиночной или настройте подключение.');
       setButtons(false, false, true);
       setConnectionStatus(false);
 

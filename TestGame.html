@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Blackjack - Восстановление доступа</title>
+  <title>Blackjack - Игра для отдыха онлайн</title>
   <style>
     :root {
       --bg: #0f172a; --surface: #1e293b; --surface-hover: #334155;
@@ -660,13 +660,17 @@
 
           const score = isMe ? calcScore(gameState.playerHand) : calcScore(gameState.opponentHand);
           if (score > 21) {
-             if (isMe) endGame('lose');
+             if (isMe){
+                endGame('lose');
+
+                if (gameState.isMultiplayer) sendToOpponent({ type: 'bust' });
+             }
              else endGame('win');
           }
 
-          if (calcScore(gameState.opponentHand) > 21) {
-            endGame('win'); // Противник перебрал -> я выиграл
-          }
+          // if (calcScore(gameState.opponentHand) > 21) {
+          //   endGame('win'); // Противник перебрал -> я выиграл
+          // }
         }
         else if (msg.type === 'hit_request') {
           // 🔹 Клиент просит карту — раздаём ему

@@ -367,16 +367,36 @@
 
       function playerHit() {
         if (!gameState.myTurn || gameState.isGameOver) return;
-        const card = draw();
-        gameState.playerHand.push(card);
-        updateUI();
-        
-        sendToOpponent({ type: 'hit', card });
-        
-        if (calcScore(gameState.playerHand) > 21) {
-          endGame('lose');
-          sendToOpponent({ type: 'bust' });
+
+        if (gameState.isMultiplayer && !gameState.isHost) {
+          // 🔹 Клиент запрашивает карту у хоста
+          sendToOpponent({ type: 'hit_request' });
+        } else {
+          // 🔹 Хост берёт карту локально
+          const card = draw();
+          gameState.playerHand.push(card);
+          updateUI();
+          
+          if (gameState.isMultiplayer) {
+            sendToOpponent({ type: 'hit', card, player: 'host' });
+          }
+          
+          if (calcScore(gameState.playerHand) > 21) {
+            endGame('lose');
+            if (gameState.isMultiplayer) sendToOpponent({ type: 'bust' });
+          }
         }
+
+        // const card = draw();
+        // gameState.playerHand.push(card);
+        // updateUI();
+        
+        // sendToOpponent({ type: 'hit', card });
+        
+        // if (calcScore(gameState.playerHand) > 21) {
+        //   endGame('lose');
+        //   sendToOpponent({ type: 'bust' });
+        // }
       }
 
       function playerStand() {
@@ -632,7 +652,20 @@
           if (calcScore(gameState.opponentHand) > 21) {
             endGame('win'); // Противник перебрал -> я выиграл
           }
-        } 
+        }
+        else if (msg.type === 'hit_request') {
+          // 🔹 Клиент просит карту — раздаём ему
+          if (gameState.isHost) {
+            const card = draw();
+            gameState.playerHand.push(card); // Клиенту
+            updateUI();
+            sendToOpponent({ type: 'hit', card, player: 'client' });
+            
+            if (calcScore(gameState.playerHand) > 21) {
+              sendToOpponent({ type: 'bust' });
+            }
+          }
+        }
         else if (msg.type === 'stand') {
           gameState.opponentHasStood = true;
           gameState.myTurn = true;

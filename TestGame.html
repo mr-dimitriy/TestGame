@@ -125,7 +125,7 @@
   <main class="game-wrapper">
     <header class="game-header">
       <h1>🃏 Blackjack</h1>
-      <p class="subtitle">Выиграть, чтобы продолжить восстановление пароля</p>
+      <p class="subtitle">Просто игра для отдыха</p>
       <div id="connection-badge" class="connection-badge">🔴 Оффлайн</div>
     </header>
 
@@ -167,7 +167,7 @@
 
     <section id="recovery-placeholder" class="recovery-form hidden" aria-hidden="true">
       <h2>✅ Вы победили! 🎉</h2>
-      <p style="margin-top: 0.5rem; font-size: 0.9rem;">Вставьте сюда свою форму восстановления пароля:</p>
+      <!-- <p style="margin-top: 0.5rem; font-size: 0.9rem;">Вставьте сюда свою форму восстановления пароля:</p> -->
     </section>
   </main>
 
@@ -318,6 +318,8 @@
         gameState.playerHand = [];
         gameState.opponentHand = [];
         gameState.isGameOver = false;
+        gameState.hasStood = false;
+        gameState.opponentHasStood = false;
         UI.recoveryPlaceholder.classList.add('hidden');
         UI.recoveryPlaceholder.setAttribute('aria-hidden', 'true');
       }
@@ -337,13 +339,15 @@
         gameState.myTurn = true; // Хост ходит первым
         updateUI();
         
-        // Отправляем клиенту его карты и наши
-        sendToOpponent({
-          type: 'init',
-          hostHand: gameState.playerHand,
-          clientHand: gameState.opponentHand,
-          seed: gameState.deckSeed
-        });
+        if (gameState.isMultiplayer) {
+          // Отправляем клиенту его карты и наши
+          sendToOpponent({
+            type: 'init',
+            hostHand: gameState.playerHand,
+            clientHand: gameState.opponentHand,
+            seed: gameState.deckSeed
+          });
+        }
       }
 
       // КЛИЕНТ получает инициализацию
@@ -381,12 +385,32 @@
         gameState.hasStood = true;
         gameState.myTurn = false;
         updateUI();
-        sendToOpponent({ type: 'stand' });
         
-        if (gameState.hasStood && gameState.opponentHasStood) {
-          setTimeout(compareScores, 500);
+        if (gameState.isMultiplayer) {
+          sendToOpponent({ type: 'stand' });
+          
+          if (gameState.hasStood && gameState.opponentHasStood) {
+            setTimeout(compareScores, 500);
+          }
+        } else {
+          opponentTurn();
         }
       }
+
+      async function opponentTurn() {
+        await delay(500);
+
+        while (calcScore(gameState.opponentHand) < 17 && !gameState.isGameOver) {
+          const card = draw();
+          gameState.opponentHand.push(card);
+          updateUI();
+          await delay(450);
+        }
+
+        await delay(300);
+        compareScores();
+      }
+
 
       function compareScores() {
         if (gameState.isGameOver) return;
@@ -428,6 +452,28 @@
         } else {
           setStatus('💥 Вы проиграли.');
         }
+      }
+      function startNewRound() {
+        resetGameState();
+        gameState.deckSeed = Math.floor(Math.random() * 1e9);
+        gameState.deck = createDeck(gameState.deckSeed);
+        
+        // // Раздача новых карт
+        // for (let i = 0; i < 2; i++) {
+        //   gameState.playerHand.push(draw());
+        //   gameState.opponentHand.push(draw());
+        // }
+        
+        gameState.myTurn = true; // Хост ходит первым
+        updateUI();
+        
+        // Отправляем клиенту новые карты
+        sendToOpponent({
+          type: 'new_round',
+          hostHand: gameState.playerHand,
+          clientHand: gameState.opponentHand,
+          seed: gameState.deckSeed
+        });
       }
 
       // =====================================================================
@@ -612,30 +658,16 @@
             setStatus('🤝 Ничья.');
           }
         }
-        else if (msg.type === 'restart') {
-          // ← ДОБАВИТЬ: Сброс для клиента
-          gameState.playerHand = msg.clientHand;
-          gameState.opponentHand = msg.hostHand;
+        // ✅ НОВОЕ: Обработка перезапуска от хоста
+        else if (msg.type === 'new_round') {
+          resetGameState();
           gameState.deckSeed = msg.seed;
           gameState.deck = createDeck(gameState.deckSeed);
-          gameState.hasStood = false;
-          gameState.opponentHasStood = false;
-          gameState.isGameOver = false;
-          gameState.myTurn = false;
-          
-          UI.recoveryPlaceholder.classList.add('hidden');
-          UI.recoveryPlaceholder.setAttribute('aria-hidden', 'false');
+          gameState.playerHand = msg.clientHand;  // Мои карты
+          gameState.opponentHand = msg.hostHand;   // Карты противника
+          gameState.myTurn = false; // Ждём хода хоста
           updateUI();
-        }
-        else if (msg.type === 'restart_request') {
-          startNewRound();
-          // Отправляем свои карты хосту для синхронизации
-          sendToOpponent({
-            type: 'restart',
-            hostHand: gameState.opponentHand, // Для хоста это его карты
-            clientHand: gameState.playerHand, // Для хоста это карты клиента
-            seed: gameState.deckSeed
-          });
+          UI.multiplayerSetup.classList.add('hidden');
         }
       }
 
@@ -643,11 +675,14 @@
       UI.btnHit.addEventListener('click', playerHit);
       UI.btnStand.addEventListener('click', playerStand);
       UI.btnNew.addEventListener('click', () => {
-        if (gameState.isMultiplayer && gameState.isHost && !gameState.isGameOver) {
+        if (gameState.isMultiplayer && gameState.isHost) {
+          // ✅ Хост инициирует новую игру
+          if (!gameState.isGameOver) {
+            setStatus('🟡 Новая игра началась!');
+          }
           startNewRound();
-          sendToOpponent({ type: 'restart_request' });
         } else if (gameState.isMultiplayer) {
-          // Клиент ждёт хоста
+          // Клиент ждёт
           setStatus('🟡 Ожидание начала новой игры от хоста...');
         } else {
           // Одиночная игра
@@ -658,30 +693,6 @@
           startGameAsHost();
         }
       });
-
-
-      function startNewRound() {
-        gameState.hasStood = false;
-        gameState.opponentHasStood = false;
-        gameState.playerHand = [];
-        gameState.opponentHand = [];
-        gameState.isGameOver = false;
-        gameState.myTurn = gameState.isHost; // Хост ходит первым
-        
-        // Новая колода
-        gameState.deckSeed = Math.floor(Math.random() * 1e9);
-        gameState.deck = createDeck(gameState.deckSeed);
-        
-        // Раздача
-        for (let i = 0; i < 2; i++) {
-          gameState.playerHand.push(draw());
-          gameState.opponentHand.push(draw());
-        }
-        
-        UI.recoveryPlaceholder.classList.add('hidden');
-        UI.recoveryPlaceholder.setAttribute('aria-hidden', 'true');
-        updateUI();
-      }
 
       document.getElementById('btn-create-room').addEventListener('click', WebRTC.createRoom);
       document.getElementById('btn-join-room').addEventListener('click', WebRTC.joinRoom);

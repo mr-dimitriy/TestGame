@@ -124,7 +124,7 @@
 <body>
   <main class="game-wrapper">
     <header class="game-header">
-      <h1>🃏 Blackjack</h1>
+      <h1>🃏 Blackjack 🃏</h1>
       <p class="subtitle">Просто игра для отдыха</p>
       <div id="connection-badge" class="connection-badge">🔴 Оффлайн</div>
     </header>
@@ -382,21 +382,11 @@
           }
           
           if (calcScore(gameState.playerHand) > 21) {
+            if (gameState.isMultiplayer) sendToOpponent({ type: 'client_win' });
             endGame('lose');
-            if (gameState.isMultiplayer) sendToOpponent({ type: 'bust' });
           }
         }
 
-        // const card = draw();
-        // gameState.playerHand.push(card);
-        // updateUI();
-        
-        // sendToOpponent({ type: 'hit', card });
-        
-        // if (calcScore(gameState.playerHand) > 21) {
-        //   endGame('lose');
-        //   sendToOpponent({ type: 'bust' });
-        // }
       }
 
       function playerStand() {
@@ -647,41 +637,35 @@
           startGameAsClient(msg);
         } 
         else if (msg.type === 'hit') {
-
           const isMe = (gameState.isHost && msg.player === 'host') || (!gameState.isHost && msg.player === 'client');
           
           if (isMe) {
-             gameState.playerHand.push(msg.card);
+            gameState.playerHand.push(msg.card);
           } else {
-             gameState.opponentHand.push(msg.card);
+            gameState.opponentHand.push(msg.card);
           }
-
+          
           updateUI();
-
+          
           const score = isMe ? calcScore(gameState.playerHand) : calcScore(gameState.opponentHand);
           if (score > 21) {
-             if (isMe){
-                endGame('lose');
-
-                if (gameState.isMultiplayer) sendToOpponent({ type: 'bust' });
-             }
-             else endGame('win');
+            if (isMe) {
+              endGame('lose');
+            }
+            else endGame('win');
           }
-
-          // if (calcScore(gameState.opponentHand) > 21) {
-          //   endGame('win'); // Противник перебрал -> я выиграл
-          // }
         }
         else if (msg.type === 'hit_request') {
-          // 🔹 Клиент просит карту — раздаём ему
           if (gameState.isHost) {
             const card = draw();
-            gameState.opponentHand.push(card); // <-- ИСПРАВЛЕНО
+            gameState.opponentHand.push(card);
             updateUI();
             sendToOpponent({ type: 'hit', card, player: 'client' });
             
             if (calcScore(gameState.opponentHand) > 21) {
-              sendToOpponent({ type: 'bust' });
+              // Хост сам завершает игру, клиент узнает из hit сообщения
+              sendToOpponent({ type: 'game_over', result: 'client_win' });
+              endGame('win'); // Хост проиграл
             }
           }
         }
@@ -694,14 +678,35 @@
             setTimeout(compareScores, 500);
           }
         } 
-        else if (msg.type === 'bust') {
-          endGame('win');
-        } 
+        else if (msg.type === 'game_over') {
+          // 🔹 Новое сообщение для синхронизации конца игры
+          if (!gameState.isGameOver) {
+            gameState.isGameOver = true;
+            updateUI();
+            
+            if (msg.result === 'client_win') {
+              if (!gameState.isHost) {
+                setStatus('🏆 Вы победили!');
+                showRecoveryForm();
+              } else {
+                setStatus('🤖 Противник выиграл.');
+              }
+            } else if (msg.result === 'host_win') {
+              if (gameState.isHost) {
+                setStatus('🏆 Вы победили!');
+                showRecoveryForm();
+              } else {
+                setStatus('🤖 Противник выиграл.');
+              }
+            }
+          }
+        }
         else if (msg.type === 'result') {
+          if (gameState.isGameOver) return;
           gameState.isGameOver = true;
           updateUI();
 
-          if (msg.result === 'lose') { // Если противник говорит что я проиграл -> я выиграл
+          if (msg.result === 'lose') {
             setStatus('🏆 Вы победили!');
             showRecoveryForm();
           } else if (msg.result === 'win') {
@@ -710,14 +715,13 @@
             setStatus('🤝 Ничья.');
           }
         }
-        // ✅ НОВОЕ: Обработка перезапуска от хоста
         else if (msg.type === 'new_round') {
           resetGameState();
           gameState.deckSeed = msg.seed;
           gameState.deck = createDeck(gameState.deckSeed);
-          gameState.playerHand = msg.clientHand;  // Мои карты
-          gameState.opponentHand = msg.hostHand;   // Карты противника
-          gameState.myTurn = false; // Ждём хода хоста
+          gameState.playerHand = msg.clientHand;
+          gameState.opponentHand = msg.hostHand;
+          gameState.myTurn = false;
           updateUI();
           UI.multiplayerSetup.classList.add('hidden');
         }

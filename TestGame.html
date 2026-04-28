@@ -647,8 +647,23 @@
           startGameAsClient(msg);
         } 
         else if (msg.type === 'hit') {
-          gameState.opponentHand.push(msg.card);
+
+          const isMe = (gameState.isHost && msg.player === 'host') || (!gameState.isHost && msg.player === 'client');
+          
+          if (isMe) {
+             gameState.playerHand.push(msg.card);
+          } else {
+             gameState.opponentHand.push(msg.card);
+          }
+
           updateUI();
+
+          const score = isMe ? calcScore(gameState.playerHand) : calcScore(gameState.opponentHand);
+          if (score > 21) {
+             if (isMe) endGame('lose');
+             else endGame('win');
+          }
+
           if (calcScore(gameState.opponentHand) > 21) {
             endGame('win'); // Противник перебрал -> я выиграл
           }
@@ -657,11 +672,11 @@
           // 🔹 Клиент просит карту — раздаём ему
           if (gameState.isHost) {
             const card = draw();
-            gameState.playerHand.push(card); // Клиенту
+            gameState.opponentHand.push(card); // <-- ИСПРАВЛЕНО
             updateUI();
             sendToOpponent({ type: 'hit', card, player: 'client' });
             
-            if (calcScore(gameState.playerHand) > 21) {
+            if (calcScore(gameState.opponentHand) > 21) {
               sendToOpponent({ type: 'bust' });
             }
           }

@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blackjack - Восстановление доступа</title>
+  <style>
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --surface-hover: #334155;
+      --accent: #10b981; --danger: #ef4444; --text: #f8fafc;
+      --text-muted: #94a3b8; --card-bg: #ffffff; --radius: 10px;
+      --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; display: flex; justify-content: center;
+      align-items: center; padding: 1rem;
+    }
+    .game-wrapper {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); max-width: 520px; width: 100%;
+      padding: 1.5rem; text-align: center;
+    }
+    .game-header h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem; }
+    
+    /* 🔹 Индикатор подключения */
+    .connection-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.25rem 0.75rem; border-radius: 99px;
+      font-size: 0.8rem; font-weight: 600; margin-bottom: 0.5rem;
+      background: rgba(239, 68, 68, 0.2); color: var(--danger);
+      transition: all 0.2s ease;
+    }
+    .connection-badge.connected { background: rgba(16, 185, 129, 0.2); color: var(--accent); }
+    .connection-badge::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%;
+      background: currentColor; display: inline-block;
+    }
+    
+    .table { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem; }
+    .hand { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: var(--radius); }
+    .hand h2 { font-size: 1rem; margin-bottom: 0.5rem; display: flex; justify-content: center; gap: 0.5rem; }
+    .score { color: var(--accent); font-weight: bold; }
+    .cards {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;
+      min-height: 90px; align-items: center;
+    }
+    .card {
+      width: 56px; height: 84px; background: var(--card-bg); color: #0f172a;
+      border: 2px solid #cbd5e1; border-radius: 6px;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 4px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      text-align: center; animation: slideIn 0.3s ease-out;
+    }
+    .card.red { color: #dc2626; }
+    .card-value { font-size: 1.1rem; }
+    .card-suit { font-size: 1.4rem; }
+    
+    .controls {
+      display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1rem;
+    }
+    button {
+      padding: 0.75rem 1.2rem; border: none; border-radius: 8px;
+      cursor: pointer; font-weight: 600; font-size: 0.95rem;
+      transition: transform 0.1s, background 0.2s, opacity 0.2s;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    #btn-hit { background: var(--accent); color: #fff; }
+    #btn-stand { background: var(--danger); color: #fff; }
+    #btn-new { background: var(--surface-hover); color: var(--text); }
+    
+    .status { min-height: 1.5em; font-size: 0.95rem; margin-bottom: 1rem; color: var(--text-muted); }
+    .hidden { display: none !important; }
+    
+    .recovery-form {
+      background: rgba(16, 185, 129, 0.1); border: 2px dashed var(--accent);
+      padding: 1.5rem; border-radius: var(--radius); animation: fadeIn 0.4s ease-out;
+    }
+    
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-20px) scale(0.9); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* 🔹 Модальное окно для SDP */
+    .sdp-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85); display: flex;
+      align-items: center; justify-content: center; z-index: 1000;
+      padding: 1rem;
+    }
+    .sdp-modal-content {
+      background: var(--surface); padding: 1.5rem; border-radius: var(--radius);
+      max-width: 500px; width: 100%; text-align: left;
+    }
+    .sdp-modal textarea {
+      width: 100%; height: 120px; margin: 1rem 0; padding: 0.5rem;
+      font-family: monospace; font-size: 0.8rem; background: var(--bg);
+      color: var(--text); border: 1px solid var(--surface-hover);
+      border-radius: 6px; resize: vertical;
+    }
+    .sdp-modal-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .sdp-modal button { flex: 1; min-width: 120px; }
+  </style>
+</head>
+<body>
+  <main class="game-wrapper">
+    <header class="game-header">
+      <h1>🃏 Blackjack</h1>
+      <p class="subtitle">Выиграть, чтобы продолжить восстановление пароля</p>
+      <!-- 🔹 Индикатор подключения -->
+      <div id="connection-badge" class="connection-badge">🔴 Оффлайн</div>
+    </header>
+
+    <!-- 🔹 Блок настройки мультиплеера -->
+    <section id="multiplayer-setup" class="recovery-form">
+      <h3>🎮 Онлайн-игра (2 игрока)</h3>
+      <div id="room-create">
+        <button id="btn-create-room" type="button">🏠 Создать комнату</button>
+        <p id="room-code" style="margin: 0.5rem 0; font-family: monospace; font-weight: bold;"></p>
+        <button id="btn-copy-code" type="button" class="hidden">📋 Скопировать код</button>
+      </div>
+      <div id="room-join" style="margin-top: 1rem;">
+        <input type="text" id="join-code" placeholder="Код комнаты (6 символов)" 
+               maxlength="6" style="padding: 0.5rem; width: 150px; text-transform: uppercase;">
+        <button id="btn-join-room" type="button">🔗 Присоединиться</button>
+      </div>
+      <div id="connection-status" style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--text-muted);"></div>
+    </section>
+
+    <section class="table" aria-label="Игровой стол">
+      <div class="hand opponent-hand">
+        <h2><span id="opponent-label">Противник</span> <span class="score" id="opponent-score">0</span></h2>
+        <div class="cards" id="opponent-cards"></div>
+      </div>
+      <div class="hand player-hand">
+        <h2>Вы <span class="score" id="player-score">0</span></h2>
+        <div class="cards" id="player-cards"></div>
+      </div>
+    </section>
+
+    <div class="controls">
+      <button id="btn-hit" disabled type="button">Ещё 🃏</button>
+      <button id="btn-stand" disabled type="button">Хватит ✋</button>
+      <button id="btn-new" type="button">🔄 Новая игра</button>
+    </div>
+
+    <div id="status" class="status" aria-live="polite">Настройте подключение или начните одиночную игру.</div>
+
+    <section id="recovery-placeholder" class="recovery-form hidden" aria-hidden="true">
+      <h2>✅ Вы победили! 🎉</h2>
+      <p style="margin-top: 0.5rem; font-size: 0.9rem;">Вставьте сюда свою форму восстановления пароля:</p>
+      <!-- <form id="real-recovery-form">...</form> -->
+    </section>
+  </main>
+
+    <script>
+    (function () {
+      'use strict';
+
+      // =====================================================================
+      // 🔹 ГЛОБАЛЬНОЕ СОСТОЯНИЕ И ИНТЕРФЕЙС
+      // =====================================================================
+      
+      const UI = {
+        playerCards: document.getElementById('player-cards'),
+        opponentCards: document.getElementById('opponent-cards'),
+        playerScore: document.getElementById('player-score'),
+        opponentScore: document.getElementById('opponent-score'),
+        opponentLabel: document.getElementById('opponent-label'),
+        btnHit: document.getElementById('btn-hit'),
+        btnStand: document.getElementById('btn-stand'),
+        btnNew: document.getElementById('btn-new'),
+        status: document.getElementById('status'),
+        connectionBadge: document.getElementById('connection-badge'),
+        connectionStatus: document.getElementById('connection-status'),
+        multiplayerSetup: document.getElementById('multiplayer-setup'),
+        roomCode: document.getElementById('room-code'),
+        btnCopyCode: document.getElementById('btn-copy-code'),
+        joinCode: document.getElementById('join-code'),
+        recoveryPlaceholder: document.getElementById('recovery-placeholder')
+      };
+
+      const gameState = {
+        deck: [],
+        playerHand: [],
+        opponentHand: [],
+        isPlayerTurn: false,
+        isGameOver: false,
+        isMultiplayer: false,
+        isHost: false,
+        peerId: null,
+        opponentPeerId: null,
+        deckSeed: null,
+        // 🔹 КРИТИЧНО: отслеживаем состояние сигнализации
+        signalingState: 'none' // 'none' | 'waiting-offer' | 'have-offer' | 'connected'
+      };
+
+      const SUITS = ['♠', '♥', '♦', '♣'];
+      const VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+      // =====================================================================
+      // 🔹 УТИЛИТЫ
+      // =====================================================================
+
+      function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+      function generateRoomCode() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
+      function generatePeerId() { return 'p_' + Math.random().toString(36).substring(2, 10); }
+
+      function calcScore(hand) {
+        let score = 0, aces = 0;
+        for (const c of hand) {
+          if (c.value === 'A') { score += 11; aces++; }
+          else if (['K','Q','J'].includes(c.value)) { score += 10; }
+          else { score += Number(c.value); }
+        }
+        while (score > 21 && aces > 0) { score -= 10; aces--; }
+        return score;
+      }
+
+      function createDeck(seed = null) {
+        const deck = [];
+        for (const s of SUITS) {
+          for (const v of VALUES) {
+            deck.push({ suit: s, value: v, isRed: s === '♥' || s === '♦' });
+          }
+        }
+        return seed ? shuffleWithSeed(deck, seed) : shuffle(deck);
+      }
+
+      function shuffleWithSeed(array, seed) {
+        let random = seed;
+        const seededRandom = () => {
+          const x = Math.sin(random++) * 10000;
+          return x - Math.floor(x);
+        };
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(seededRandom() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+      }
+
+      function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+      }
+
+      function draw() {
+        if (gameState.deck.length === 0) {
+          gameState.deck = createDeck(gameState.deckSeed);
+          setStatus('🔁 Колода перемешана');
+        }
+        return gameState.deck.pop();
+      }
+
+      // =====================================================================
+      // 🔹 РЕНДЕРИНГ
+      // =====================================================================
+
+      function renderCard(card, container) {
+        const el = document.createElement('div');
+        el.className = `card ${card.isRed ? 'red' : ''}`;
+        el.innerHTML = `<span class="card-value">${card.value}</span><span class="card-suit">${card.suit}</span>`;
+        container.appendChild(el);
+      }
+
+      function render() {
+        UI.playerCards.textContent = '';
+        UI.opponentCards.textContent = '';
+        gameState.playerHand.forEach(c => renderCard(c, UI.playerCards));
+        gameState.opponentHand.forEach(c => renderCard(c, UI.opponentCards));
+        UI.playerScore.textContent = calcScore(gameState.playerHand);
+        UI.opponentScore.textContent = calcScore(gameState.opponentHand);
+      }
+
+      function setStatus(msg) { 
+        UI.status.textContent = msg; 
+        console.log('[Game]', msg);
+      }
+
+      function setButtons(hit, stand, newGame) {
+        UI.btnHit.disabled = !hit;
+        UI.btnStand.disabled = !stand;
+        UI.btnNew.disabled = !newGame;
+      }
+
+      function setConnectionStatus(connected, msg = '') {
+        UI.connectionBadge.className = `connection-badge ${connected ? 'connected' : ''}`;
+        UI.connectionBadge.textContent = connected ? '🟢 Онлайн' : '🔴 Оффлайн';
+        if (msg) UI.connectionStatus.textContent = msg;
+      }
+
+      function showRecoveryForm() {
+        UI.recoveryPlaceholder.classList.remove('hidden');
+        UI.recoveryPlaceholder.setAttribute('aria-hidden', 'false');
+        setStatus('');
+      }
+
+      // =====================================================================
+      // 🔹 ЛОГИКА ИГРЫ
+      // =====================================================================
+
+      function resetGameState() {
+        gameState.playerHand = [];
+        gameState.opponentHand = [];
+        gameState.isPlayerTurn = false;
+        gameState.isGameOver = false;
+        
+        if (gameState.isMultiplayer && gameState.isHost) {
+          gameState.deckSeed = Math.floor(Math.random() * 1e9);
+          gameState.deck = createDeck(gameState.deckSeed);
+          sendToOpponent({ type: 'deck_seed', seed: gameState.deckSeed });
+        } else if (gameState.isMultiplayer) {
+          gameState.deck = [];
+        } else {
+          gameState.deck = createDeck();
+        }
+        
+        UI.recoveryPlaceholder.classList.add('hidden');
+        UI.recoveryPlaceholder.setAttribute('aria-hidden', 'true');
+        render();
+      }
+
+      function startGame() {
+        resetGameState();
+        
+        if (gameState.isMultiplayer && !gameState.isHost) {
+          setStatus('🟡 Ожидание раздачи от хоста...');
+          setButtons(false, false, true);
+          return;
+        }
+        
+        // for (let i = 0; i < 2; i++) {
+        //   gameState.playerHand.push(draw());
+        //   gameState.opponentHand.push(draw());
+        // }
+        
+        gameState.isPlayerTurn = true;
+        setStatus(gameState.isMultiplayer 
+          ? '🎮 Ваш ход! Возьмите карту или остановитесь.' 
+          : 'Ваш ход. Возьмите карту или остановитесь.');
+        setButtons(true, true, false);
+        render();
+        
+        if (gameState.isMultiplayer && gameState.isHost) {
+          sendToOpponent({
+            type: 'initial_deal',
+            playerCards: gameState.playerHand,
+            opponentCards: gameState.opponentHand
+          });
+        }
+      }
+
+      function playerHit() {
+        if (!gameState.isPlayerTurn || gameState.isGameOver) return;
+        
+        const card = draw();
+        gameState.playerHand.push(card);
+        render();
+        
+        if (gameState.isMultiplayer) {
+          sendToOpponent({ type: 'card_drawn', player: 'you', card });
+        }
+        
+        if (calcScore(gameState.playerHand) > 21) {
+          if (gameState.isMultiplayer) {
+            sendToOpponent({ type: 'game_over', result: 'player_bust' });
+          }
+          endGame('💥 Перебор! Вы проиграли.');
+        }
+      }
+
+      function playerStand() {
+        if (!gameState.isPlayerTurn || gameState.isGameOver) return;
+        
+        if (gameState.isMultiplayer) {
+          sendToOpponent({ type: 'stand', player: 'you' });
+        }
+        
+        gameState.isPlayerTurn = false;
+        setButtons(false, false, false);
+        
+        if (gameState.isMultiplayer) {
+          setStatus('🟡 Ожидание хода противника...');
+        } else {
+          setStatus('🤖 Противник делает ход...');
+          opponentTurn();
+        }
+      }
+
+      async function opponentTurn() {
+        render();
+        while (calcScore(gameState.opponentHand) < 17 && !gameState.isGameOver) {
+          await delay(450);
+          gameState.opponentHand.push(draw());
+          render();
+        }
+        await delay(300);
+        decideWinner();
+      }
+
+      function opponentMoveReceived(card) {
+        if (gameState.isGameOver) return;
+        gameState.opponentHand.push(card);
+        render();
+        if (calcScore(gameState.opponentHand) > 21) {
+          endGame('🎉 Противник перебрал! Вы победили!');
+        }
+      }
+
+      function opponentStandReceived() {
+        if (gameState.isGameOver) return;
+        decideWinner();
+      }
+
+      function decideWinner() {
+        const playerScore = calcScore(gameState.playerHand);
+        const opponentScore = calcScore(gameState.opponentHand);
+        
+        gameState.isGameOver = true;
+        setButtons(false, false, true);
+        
+        let result = '';
+        if (playerScore > 21) {
+          result = 'lose';
+          setStatus('💥 Перебор! Вы проиграли.');
+        } else if (opponentScore > 21) {
+          result = 'win';
+          setStatus('🎉 Противник перебрал! Вы победили!');
+        } else if (playerScore > opponentScore) {
+          result = 'win';
+          setStatus('🏆 Вы ближе к 21! Победа!');
+        } else if (playerScore < opponentScore) {
+          result = 'lose';
+          setStatus('🤖 Противник выиграл. Попробуйте снова.');
+        } else {
+          result = 'draw';
+          setStatus('🤝 Ничья. Сыграйте ещё раз.');
+        }
+        
+        if (gameState.isMultiplayer) {
+          sendToOpponent({ type: 'game_over', result });
+        }
+        
+        if (result === 'win') {
+          showRecoveryForm();
+        }
+      }
+
+      function endGame(msg) {
+        gameState.isGameOver = true;
+        setStatus(msg);
+        setButtons(false, false, true);
+      }
+
+      // =====================================================================
+      // 🔹 WEBRTC — ИСПРАВЛЕННАЯ ВЕРСИЯ С ПРОВЕРКОЙ СОСТОЯНИЙ
+      // =====================================================================
+
+      const WebRTC = (function() {
+        let pc = null;
+        let dataChannel = null;
+        
+        const CONFIG = { 
+          iceServers: [] 
+          // Для отладки можно добавить: 
+          // iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        // 🔹 КРИТИЧНО: безопасная установка удалённого описания
+        async function safeSetRemoteDescription(description) {
+          if (!pc) throw new Error('RTCPeerConnection не инициализирован');
+          
+          const currentState = pc.signalingState;
+          const descType = description.type;
+          
+          console.log(`🔍 SDP Check: текущее=${currentState}, пытаемся установить=${descType}`);
+          
+          // 🔹 ПРАВИЛА состояний сигнализации:
+          // - В состоянии 'stable' можно принимать только 'offer'
+          // - В состоянии 'have-local-offer' можно принимать только 'answer'
+          // - В состоянии 'have-remote-offer' можно принимать только 'answer' (pranswer)
+          
+          if (descType === 'offer' && currentState !== 'stable') {
+            throw new Error(`Нельзя установить offer в состоянии ${currentState}. Ожидается 'stable'.`);
+          }
+          if (descType === 'answer' && currentState !== 'have-local-offer') {
+            throw new Error(`Нельзя установить answer в состоянии ${currentState}. Ожидается 'have-local-offer'.`);
+          }
+          
+          try {
+            await pc.setRemoteDescription(description);
+            console.log('✅ setRemoteDescription успешно');
+          } catch (err) {
+            console.error('❌ setRemoteDescription ошибка:', err);
+            // 🔹 Попытка восстановления: если ошибка состояния, сбрасываем соединение
+            if (err.message.includes('wrong state') || err.message.includes('stable')) {
+              console.warn('🔄 Попытка сброса соединения из-за рассинхрона состояний...');
+              resetConnection();
+              throw new Error('Рассинхрон соединения. Нажмите "Новая игра" и попробуйте подключиться заново.');
+            }
+            throw err;
+          }
+        }
+
+        function resetConnection() {
+          if (dataChannel) dataChannel.close();
+          if (pc) pc.close();
+          pc = null;
+          dataChannel = null;
+          gameState.signalingState = 'none';
+          console.log('🔄 Соединение сброшено');
+        }
+
+        async function setupConnection(isOfferer) {
+          resetConnection(); // 🔹 Всегда начинаем с чистого состояния
+          
+          pc = new RTCPeerConnection(CONFIG);
+          
+          pc.onicecandidate = (e) => {
+            if (e.candidate) {
+              console.log('🧊 ICE candidate:', e.candidate.candidate ? 'есть' : 'null');
+            }
+          };
+          
+          pc.onconnectionstatechange = () => {
+            const state = pc.connectionState;
+            console.log('🔗 Connection state:', state);
+            
+            if (state === 'connected') {
+              gameState.signalingState = 'connected';
+              setConnectionStatus(true, '✅ Соединение установлено!');
+              UI.multiplayerSetup.classList.add('hidden');
+              UI.opponentLabel.textContent = gameState.isHost ? 'Игрок 2' : 'Игрок 1';
+              startGame();
+            } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+              setConnectionStatus(false, '❌ Соединение разорвано');
+              gameState.isMultiplayer = false;
+              gameState.signalingState = 'none';
+              setButtons(false, false, true);
+            }
+          };
+          
+          pc.ondatachannel = (e) => {
+            console.log('📡 Получен data channel');
+            dataChannel = e.channel;
+            setupDataChannel();
+          };
+          
+          return pc;
+        }
+
+        function setupDataChannel() {
+          if (!dataChannel) return;
+          
+          dataChannel.onopen = () => {
+            console.log('✅ Data channel open');
+            sendToOpponent({ type: 'peer_info', peerId: gameState.peerId });
+          };
+          
+          dataChannel.onmessage = (e) => {
+            try {
+              const msg = JSON.parse(e.data);
+              handleIncomingMessage(msg);
+            } catch (err) {
+              console.error('❌ Ошибка парсинга:', err);
+            }
+          };
+          
+          dataChannel.onclose = () => {
+            console.log('❌ Data channel closed');
+            setConnectionStatus(false, '❌ Противник отключился');
+            gameState.isMultiplayer = false;
+            gameState.signalingState = 'none';
+          };
+        }
+
+        // 🔹 Создание комнаты (ХОСТ)
+        async function createRoom() {
+          try {
+            gameState.isHost = true;
+            gameState.isMultiplayer = true;
+            gameState.peerId = generatePeerId();
+            gameState.signalingState = 'none';
+            
+            UI.roomCode.textContent = `Код: ${generateRoomCode()}`;
+            UI.btnCopyCode.classList.remove('hidden');
+            UI.btnCopyCode.onclick = () => {
+              const code = UI.roomCode.textContent.replace('Код: ', '');
+              navigator.clipboard.writeText(code);
+              UI.connectionStatus.textContent = '✅ Код скопирован! Отправьте его противнику.';
+            };
+            
+            setConnectionStatus(false, '🟡 Создание комнаты...');
+            
+            await setupConnection(true);
+            
+            // 🔹 Создаём data channel ТОЛЬКО на стороне, создающей offer
+            dataChannel = pc.createDataChannel('blackjack');
+            setupDataChannel();
+            
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            // 🔹 Обновляем состояние сигнализации
+            gameState.signalingState = 'have-local-offer';
+            
+            showSDPModal('offer', offer);
+            
+          } catch (err) {
+            console.error('❌ Ошибка создания комнаты:', err);
+            UI.connectionStatus.textContent = '❌ Ошибка: ' + err.message;
+            resetConnection();
+          }
+        }
+
+        // 🔹 Присоединение (КЛИЕНТ)
+        async function joinRoom() {
+          try {
+            const code = UI.joinCode.value.trim().toUpperCase();
+            if (code.length !== 6) {
+              UI.connectionStatus.textContent = '❌ Неверный формат кода (6 символов)';
+              return;
+            }
+            
+            gameState.isHost = false;
+            gameState.isMultiplayer = true;
+            gameState.peerId = generatePeerId();
+            gameState.signalingState = 'waiting-offer';
+            
+            setConnectionStatus(false, '🟡 Ожидание предложения от хоста...');
+            
+            await setupConnection(false);
+            // 🔹 Клиент НЕ создаёт data channel — он придёт от хоста
+            
+            showSDPModal('waiting_offer');
+            
+          } catch (err) {
+            console.error('❌ Ошибка подключения:', err);
+            UI.connectionStatus.textContent = '❌ Ошибка: ' + err.message;
+            resetConnection();
+          }
+        }
+
+        // 🔹 Модальное окно для обмена SDP
+        function showSDPModal(mode, sdp = null) {
+          // Удаляем старые модальные окна если есть
+          const oldModal = document.querySelector('.sdp-modal');
+          if (oldModal) oldModal.remove();
+          
+          const modal = document.createElement('div');
+          modal.className = 'sdp-modal';
+          
+          let content = '';
+          
+          if (mode === 'offer') {
+            content = `
+              <h3>📤 Шаг 1: Отправьте это противнику</h3>
+              <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.5rem;">
+                Скопируйте код ниже и отправьте второму игроку:
+              </p>
+              <textarea id="sdp-offer" readonly>${JSON.stringify(sdp)}</textarea>
+              <div class="sdp-modal-buttons">
+                <button id="btn-copy-offer" type="button">📋 Копировать</button>
+                <button id="btn-close-modal" type="button">✕ Закрыть</button>
+              </div>
+              <hr style="margin:1rem 0;border-color:var(--surface-hover);">
+              <h3>📥 Шаг 2: Вставьте ответ от противника</h3>
+              <textarea id="sdp-answer-input" placeholder="Вставьте сюда ответ (answer) от противника..."></textarea>
+              <button id="btn-apply-answer" type="button" style="background:var(--accent);color:#fff;">✅ Подключиться</button>
+            `;
+          } else if (mode === 'waiting_offer') {
+            content = `
+              <h3>📥 Шаг 1: Вставьте предложение от хоста</h3>
+              <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.5rem;">
+                Попросите создателя комнаты отправить вам код "Предложение":
+              </p>
+              <textarea id="sdp-offer-input" placeholder="Вставьте сюда предложение (offer) от хоста..."></textarea>
+              <button id="btn-apply-offer" type="button" style="background:var(--accent);color:#fff;">✅ Применить</button>
+              <button id="btn-close-modal" type="button" style="margin-left:0.5rem;">✕ Отмена</button>
+            `;
+          } else if (mode === 'send_answer') {
+            content = `
+              <h3>📤 Шаг 2: Отправьте это хосту</h3>
+              <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:0.5rem;">
+                Скопируйте код ниже и отправьте создателю комнаты:
+              </p>
+              <textarea id="sdp-answer" readonly>${JSON.stringify(sdp)}</textarea>
+              <div class="sdp-modal-buttons">
+                <button id="btn-copy-answer" type="button">📋 Копировать</button>
+                <button id="btn-close-modal" type="button">✕ Закрыть</button>
+              </div>
+              <p style="font-size:0.85rem;color:var(--accent);margin-top:1rem;">
+                ✅ После того как хост применит ваш ответ, игра начнётся автоматически!
+              </p>
+            `;
+          }
+          
+          modal.innerHTML = `<div class="sdp-modal-content">${content}</div>`;
+          document.body.appendChild(modal);
+          
+          modal.querySelector('#btn-close-modal').onclick = () => {
+            modal.remove();
+            resetConnection();
+            setConnectionStatus(false);
+          };
+          
+          if (mode === 'offer') {
+            modal.querySelector('#btn-copy-offer').onclick = () => {
+              const text = modal.querySelector('#sdp-offer').value;
+              navigator.clipboard.writeText(text);
+              UI.connectionStatus.textContent = '✅ Предложение скопировано!';
+            };
+            modal.querySelector('#btn-apply-answer').onclick = async () => {
+              try {
+                const answerText = modal.querySelector('#sdp-answer-input').value.trim();
+                if (!answerText) {
+                  alert('❌ Вставьте ответ от противника');
+                  return;
+                }
+                const answer = JSON.parse(answerText);
+                
+                // 🔹 ПРОВЕРКА: должно быть типа 'answer'
+                if (answer.type !== 'answer') {
+                  throw new Error('Это не ответ (answer), а ' + answer.type);
+                }
+                
+                await safeSetRemoteDescription(answer);
+                modal.remove();
+                UI.connectionStatus.textContent = '🟡 Установление соединения...';
+              } catch (e) {
+                console.error('❌ Ошибка применения ответа:', e);
+                alert('❌ Ошибка: ' + e.message + '\n\nПопробуйте начать подключение заново.');
+                modal.remove();
+                resetConnection();
+              }
+            };
+          } else if (mode === 'waiting_offer') {
+            modal.querySelector('#btn-apply-offer').onclick = async () => {
+              try {
+                const offerText = modal.querySelector('#sdp-offer-input').value.trim();
+                if (!offerText) {
+                  alert('❌ Вставьте предложение от хоста');
+                  return;
+                }
+                const offer = JSON.parse(offerText);
+                
+                // 🔹 ПРОВЕРКА: должно быть типа 'offer'
+                if (offer.type !== 'offer') {
+                  throw new Error('Это не предложение (offer), а ' + offer.type);
+                }
+                
+                await safeSetRemoteDescription(offer);
+                gameState.signalingState = 'have-remote-offer';
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                modal.remove();
+                showSDPModal('send_answer', answer);
+              } catch (e) {
+                console.error('❌ Ошибка применения предложения:', e);
+                alert('❌ Ошибка: ' + e.message + '\n\nУбедитесь, что вставили правильный код от хоста.');
+                modal.remove();
+                resetConnection();
+              }
+            };
+          } else if (mode === 'send_answer') {
+            modal.querySelector('#btn-copy-answer').onclick = () => {
+              const text = modal.querySelector('#sdp-answer').value;
+              navigator.clipboard.writeText(text);
+              UI.connectionStatus.textContent = '✅ Ответ скопирован! Отправьте его хосту.';
+            };
+          }
+        }
+
+        function send(msg) {
+          if (dataChannel?.readyState === 'open') {
+            dataChannel.send(JSON.stringify({ ...msg, from: gameState.peerId }));
+            return true;
+          }
+          console.warn('⚠️ Data channel not ready, state:', dataChannel?.readyState);
+          return false;
+        }
+
+        function handleIncomingMessage(msg) {
+          console.log('📩 Получено:', msg.type, 'от:', msg.from);
+          
+          switch (msg.type) {
+            case 'peer_info':
+              gameState.opponentPeerId = msg.peerId;
+              break;
+            case 'deck_seed':
+              gameState.deckSeed = msg.seed;
+              gameState.deck = createDeck(gameState.deckSeed);
+              if (!gameState.isPlayerTurn && !gameState.isGameOver && !gameState.isHost) {
+                startGame();
+              }
+              break;
+            case 'initial_deal':
+              gameState.playerHand = msg.playerCards;
+              gameState.opponentHand = msg.opponentCards;
+              gameState.isPlayerTurn = true;
+              gameState.deck = createDeck(gameState.deckSeed);
+              setStatus('🎮 Ваш ход!');
+              setButtons(true, true, false);
+              render();
+              break;
+            case 'card_drawn':
+              if (msg.player === 'opponent') opponentMoveReceived(msg.card);
+              break;
+            case 'stand':
+              if (msg.player === 'opponent') opponentStandReceived();
+              break;
+            case 'game_over':
+              if (!gameState.isGameOver) {
+                gameState.isGameOver = true;
+                setButtons(false, false, true);
+                const results = {
+                  'win': '🎉 Вы победили!',
+                  'lose': '🤖 Вы проиграли',
+                  'draw': '🤝 Ничья',
+                  'player_bust': '💥 Вы перебрали!'
+                };
+                setStatus(results[msg.result] || '🏁 Игра окончена');
+                if (msg.result === 'win') showRecoveryForm();
+              }
+              break;
+            case 'restart':
+              handleRestart();
+              break;
+          }
+        }
+
+        return {
+          createRoom,
+          joinRoom,
+          send,
+          reset: resetConnection
+        };
+      })();
+
+      function sendToOpponent(msg) {
+        if (gameState.isMultiplayer) {
+          WebRTC.send(msg);
+        }
+      }
+
+      function handleRestart() {
+        gameState.isGameOver = false;
+        UI.recoveryPlaceholder.classList.add('hidden');
+        startGame();
+      }
+
+      // =====================================================================
+      // 🔹 ИНИЦИАЛИЗАЦИЯ
+      // =====================================================================
+
+      UI.btnHit.addEventListener('click', playerHit);
+      UI.btnStand.addEventListener('click', playerStand);
+      UI.btnNew.addEventListener('click', () => {
+        if (gameState.isMultiplayer && gameState.isHost && !gameState.isGameOver) {
+          sendToOpponent({ type: 'restart' });
+        }
+        if (gameState.isMultiplayer && gameState.signalingState === 'connected') {
+          // Перезапуск игры без разрыва соединения
+          handleRestart();
+        } else {
+          // Новая одиночная игра или сброс
+          gameState.isMultiplayer = false;
+          gameState.signalingState = 'none';
+          WebRTC.reset?.();
+          setConnectionStatus(false);
+          UI.multiplayerSetup.classList.remove('hidden');
+          startGame();
+        }
+      });
+
+      document.getElementById('btn-create-room').addEventListener('click', WebRTC.createRoom);
+      document.getElementById('btn-join-room').addEventListener('click', WebRTC.joinRoom);
+
+      // Старт
+      setStatus('Нажмите "Новая игра" для одиночной или настройте подключение для игры вдвоём.');
+      setButtons(false, false, true);
+      setConnectionStatus(false);
+
+    })();
+  </script>
+</body>
+</html>

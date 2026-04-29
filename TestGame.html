@@ -125,6 +125,7 @@
   <main class="game-wrapper">
     <header class="game-header">
       <h1>🃏 Blackjack 🃏</h1>
+      <p>Fix 10</p>
       <p class="subtitle">Просто игра для отдыха</p>
       <div id="connection-badge" class="connection-badge">🔴 Оффлайн</div>
     </header>
@@ -649,7 +650,7 @@
             html = `<span class="step-indicator">Шаг 1/2</span><h3>📤 Отправьте это противнику</h3>
                     <h4 id="room_code">${UI.roomCode.textContent}</h4>
                     <textarea id="d" readonly>${JSON.stringify(sdp)}</textarea>
-                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value);">📋 Копировать</button>
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value)">📋 Копировать</button>
                     <hr style="margin:1rem 0;opacity:0.2"><span class="step-indicator">Шаг 2/2</span><h3>📥 Вставьте ответ</h3>
                     <textarea id="i" placeholder="Answer..."></textarea>
                     <button id="go" style="background:var(--accent);color:#fff;width:100%">✅ Подключиться</button>`;
@@ -660,7 +661,7 @@
           } else if (mode === 'send_answer') {
             html = `<span class="step-indicator">Шаг 2/2</span><h3>📤 Отправьте это хосту</h3>
                     <textarea id="d" readonly>${JSON.stringify(sdp)}</textarea>
-                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value);">📋 Копировать</button>
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value)">📋 Копировать</button>
                     <p style="color:var(--accent);margin-top:1rem;text-align:center">⏳ Ждем подключения...</p>`;
           }
           
@@ -749,7 +750,6 @@
             }
             //setTimeout(compareScores, 500);
           }
-<<<<<<< HEAD
         }
         else if (msg.type === 'reveal') {
           // 🔹 Клиент получает команду раскрыть карты
@@ -760,8 +760,7 @@
         else if (msg.type === 'bust') {
           endGame('win');
         } 
-=======
-        } 
+         
         else if (msg.type === 'game_over') {
           // 🔹 Новое сообщение для синхронизации конца игры
           if (!gameState.isGameOver) {
@@ -785,7 +784,6 @@
             }
           }
         }
->>>>>>> 916f37d809bd51c4e41b869687e4a248e6149b7b
         else if (msg.type === 'result') {
           if (gameState.isGameOver) return;
           gameState.isGameOver = true;

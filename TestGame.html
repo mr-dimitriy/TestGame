@@ -125,7 +125,7 @@
   <main class="game-wrapper">
     <header class="game-header">
       <h1>🃏 Blackjack 🃏</h1>
-      <p>Fix 10</p>
+      <p>Fix 11</p>
       <p class="subtitle">Просто игра для отдыха</p>
       <div id="connection-badge" class="connection-badge">🔴 Оффлайн</div>
     </header>
@@ -417,8 +417,17 @@
           }
           
           if (calcScore(gameState.playerHand) > 21) {
+              gameState.isRevealed = true; 
+              updateUI();
             if (gameState.isMultiplayer) sendToOpponent({ type: 'client_win' });
             endGame('lose');
+          }
+          else{
+            gameState.myTurn = false;
+            updateUI();
+            if (gameState.isMultiplayer) {
+              sendToOpponent({ type: 'turn_pass' });
+            }
           }
         }
 
@@ -434,15 +443,14 @@
         if (gameState.isMultiplayer) {
           sendToOpponent({ type: 'stand' });
           
-          // 🔹 Если оба встали — хост показывает кнопку "Вскрываемся"
-          if (gameState.hasStood && gameState.opponentHasStood && gameState.isHost) {
-            UI.status.textContent = '🟢 Оба игрока остановились! Нажмите "Вскрываемся"';
-            // Показываем кнопку раскрытия вместо обычных кнопок
-            showRevealButton();
+          if (gameState.hasStood && gameState.opponentHasStood) {
+            revealCards();
           }
 
         } else {
-          opponentTurn();
+          gameState.isRevealed = true;
+          updateUI();
+          setTimeout(compareScores, 500);
         }
       }
 
@@ -459,26 +467,7 @@
         await delay(300);
         compareScores();
       }
-
-      // 🔹 НОВАЯ ФУНКЦИЯ: Показ кнопки вскрытия
-      function showRevealButton() {
-        UI.btnHit.style.display = 'none';
-        UI.btnStand.style.display = 'none';
-        
-        const revealBtn = document.createElement('button');
-        revealBtn.id = 'btn-reveal';
-        revealBtn.type = 'button';
-        revealBtn.textContent = '🎴 Вскрываемся';
-        revealBtn.style.cssText = 'background:var(--accent);color:#fff;font-size:1.1rem;padding:1rem 2rem;';
-        revealBtn.onclick = () => revealCards();
-        
-        // Очищаем controls и добавляем только кнопку вскрытия и "Новая игра"
-        const controls = document.querySelector('.controls');
-        controls.innerHTML = '';
-        controls.appendChild(revealBtn);
-        controls.appendChild(UI.btnNew);
-      }
-
+      
       function compareScores() {
         if (gameState.isGameOver) return;
 
@@ -522,6 +511,7 @@
       }
       function startNewRound() {
         resetGameState();
+        gameState.isRevealed = false;
         gameState.deckSeed = Math.floor(Math.random() * 1e9);
         gameState.deck = createDeck(gameState.deckSeed);
         
@@ -716,6 +706,8 @@
           
           const score = isMe ? calcScore(gameState.playerHand) : calcScore(gameState.opponentHand);
           if (score > 21) {
+            gameState.isRevealed = true;
+            updateUI();
             if (isMe) {
               endGame('lose');
             }
@@ -738,17 +730,10 @@
         }
         else if (msg.type === 'stand') {
           gameState.opponentHasStood = true;
-          gameState.myTurn = true;
           updateUI();
 
           if (gameState.hasStood && gameState.opponentHasStood) {
-            if (gameState.isHost) {
-              UI.status.textContent = '🟢 Оба игрока остановились! Нажмите "Вскрываемся"';
-              showRevealButton();
-            } else {
-              UI.status.textContent = '🟡 Ожидание вскрытия карт хостом...';
-            }
-            //setTimeout(compareScores, 500);
+            revealCards();
           }
         }
         else if (msg.type === 'reveal') {
@@ -760,7 +745,10 @@
         else if (msg.type === 'bust') {
           endGame('win');
         } 
-         
+        else if (msg.type === 'turn_pass') {
+          gameState.myTurn = true;
+          updateUI();
+        }
         else if (msg.type === 'game_over') {
           // 🔹 Новое сообщение для синхронизации конца игры
           if (!gameState.isGameOver) {

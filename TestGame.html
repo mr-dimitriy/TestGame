@@ -198,22 +198,24 @@
 
       // 🔹 Состояние игры с четким разделением ролей
       const gameState = {
-        deck: [], 
+        deck: [],   //Колода
         playerHand: [],   // Мои карты
         opponentHand: [], // Карты противника
-        isMultiplayer: false, 
-        isHost: false,
+        isMultiplayer: false, //Режим онлайн
+        isHost: false,    //Создатель комнаты
         myTurn: false,    // true если сейчас мой ход
-        isGameOver: false,
-        deckSeed: null,
+        isGameOver: false, //Конец игры
+        deckSeed: null, //
         hasStood: false,
-        opponentHasStood: false
+        opponentHasStood: false,
+        isRevealed: false
       };
 
       const SUITS = ['♠', '♥', '♦', '♣'];
       const VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 
       function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+      
       function generateRoomCode() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
       function generatePeerId() { return 'p_' + Math.random().toString(36).substring(2, 10); }
 
@@ -273,10 +275,29 @@
         UI.playerCards.textContent = '';
         UI.opponentCards.textContent = '';
         gameState.playerHand.forEach(c => renderCard(c, UI.playerCards));
-        gameState.opponentHand.forEach(c => renderCard(c, UI.opponentCards));
         
+        //UI.playerScore.textContent = calcScore(gameState.playerHand);
+        //UI.opponentScore.textContent = calcScore(gameState.opponentHand);
+
+        // 🔹 Карты противника показываем только если раскрыты
+        if (gameState.isRevealed) {
+          gameState.opponentHand.forEach(c => renderCard(c, UI.opponentCards));
+        } else {
+          // Показываем рубашки карт
+          const hiddenCount = gameState.opponentHand.length || 2;
+          for (let i = 0; i < hiddenCount; i++) {
+            const el = document.createElement('div');
+            el.className = 'card';
+            el.style.background = 'linear-gradient(135deg, #1e293b 25%, #334155 25%, #334155 50%, #1e293b 50%, #1e293b 75%, #334155 75%, #334155 100%)';
+            el.style.backgroundSize = '10px 10px';
+            el.innerHTML = '<span style="font-size:1.5rem;align-self:center">🂠</span>';
+            UI.opponentCards.appendChild(el);
+          }
+        }
+
         UI.playerScore.textContent = calcScore(gameState.playerHand);
-        UI.opponentScore.textContent = calcScore(gameState.opponentHand);
+        UI.opponentScore.textContent = gameState.isRevealed ? 
+            calcScore(gameState.opponentHand) : '?';
 
         // Подсветка активного игрока
         UI.handPlayer.classList.toggle('active-turn', gameState.myTurn && !gameState.isGameOver);
@@ -291,6 +312,19 @@
         // Статус
         if (gameState.isGameOver) return;
         UI.status.textContent = gameState.myTurn ? '🟢 Ваш ход. Возьмите карту или остановитесь.' : '🟡 Ход противника...';
+      }
+
+      // Раскрытие карт
+      function revealCards() {
+        gameState.isRevealed = true;
+        updateUI();
+        
+        if (gameState.isMultiplayer) {
+          sendToOpponent({ type: 'reveal' });
+        }
+        
+        // После раскрытия сравниваем очки
+        setTimeout(compareScores, 500);
       }
 
       function setStatus(msg) { UI.status.textContent = msg; }
@@ -409,9 +443,13 @@
         if (gameState.isMultiplayer) {
           sendToOpponent({ type: 'stand' });
           
-          if (gameState.hasStood && gameState.opponentHasStood) {
-            setTimeout(compareScores, 500);
+          // 🔹 Если оба встали — хост показывает кнопку "Вскрываемся"
+          if (gameState.hasStood && gameState.opponentHasStood && gameState.isHost) {
+            UI.status.textContent = '🟢 Оба игрока остановились! Нажмите "Вскрываемся"';
+            // Показываем кнопку раскрытия вместо обычных кнопок
+            showRevealButton();
           }
+
         } else {
           opponentTurn();
         }
@@ -431,6 +469,24 @@
         compareScores();
       }
 
+      // 🔹 НОВАЯ ФУНКЦИЯ: Показ кнопки вскрытия
+      function showRevealButton() {
+        UI.btnHit.style.display = 'none';
+        UI.btnStand.style.display = 'none';
+        
+        const revealBtn = document.createElement('button');
+        revealBtn.id = 'btn-reveal';
+        revealBtn.type = 'button';
+        revealBtn.textContent = '🎴 Вскрываемся';
+        revealBtn.style.cssText = 'background:var(--accent);color:#fff;font-size:1.1rem;padding:1rem 2rem;';
+        revealBtn.onclick = () => revealCards();
+        
+        // Очищаем controls и добавляем только кнопку вскрытия и "Новая игра"
+        const controls = document.querySelector('.controls');
+        controls.innerHTML = '';
+        controls.appendChild(revealBtn);
+        controls.appendChild(UI.btnNew);
+      }
 
       function compareScores() {
         if (gameState.isGameOver) return;
@@ -485,15 +541,25 @@
         // }
         
         gameState.myTurn = true; // Хост ходит первым
+
+        const controls = document.querySelector('.controls');
+        controls.innerHTML = '';
+        controls.appendChild(UI.btnHit);
+        controls.appendChild(UI.btnStand);
+        controls.appendChild(UI.btnNew);
+        UI.btnHit.style.display = '';
+        UI.btnStand.style.display = '';
         updateUI();
         
         // Отправляем клиенту новые карты
-        sendToOpponent({
-          type: 'new_round',
-          hostHand: gameState.playerHand,
-          clientHand: gameState.opponentHand,
-          seed: gameState.deckSeed
-        });
+        if (gameState.isMultiplayer) {
+          sendToOpponent({
+            type: 'new_round',
+            hostHand: gameState.playerHand,
+            clientHand: gameState.opponentHand,
+            seed: gameState.deckSeed
+          });
+        }
       }
 
       // =====================================================================
@@ -593,7 +659,7 @@
             html = `<span class="step-indicator">Шаг 1/2</span><h3>📤 Отправьте это противнику</h3>
                     <h4 id="room_code">${UI.roomCode.textContent}</h4>
                     <textarea id="d" readonly>${JSON.stringify(sdp)}</textarea>
-                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value);alert('OK')">📋 Копировать</button>
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value);">📋 Копировать</button>
                     <hr style="margin:1rem 0;opacity:0.2"><span class="step-indicator">Шаг 2/2</span><h3>📥 Вставьте ответ</h3>
                     <textarea id="i" placeholder="Answer..."></textarea>
                     <button id="go" style="background:var(--accent);color:#fff;width:100%">✅ Подключиться</button>`;
@@ -604,7 +670,7 @@
           } else if (mode === 'send_answer') {
             html = `<span class="step-indicator">Шаг 2/2</span><h3>📤 Отправьте это хосту</h3>
                     <textarea id="d" readonly>${JSON.stringify(sdp)}</textarea>
-                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value);alert('Отправьте хосту!')">📋 Копировать</button>
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value);">📋 Копировать</button>
                     <p style="color:var(--accent);margin-top:1rem;text-align:center">⏳ Ждем подключения...</p>`;
           }
           
@@ -672,9 +738,21 @@
           updateUI();
 
           if (gameState.hasStood && gameState.opponentHasStood) {
-            setTimeout(compareScores, 500);
+            if (gameState.isHost) {
+              UI.status.textContent = '🟢 Оба игрока остановились! Нажмите "Вскрываемся"';
+              showRevealButton();
+            } else {
+              UI.status.textContent = '🟡 Ожидание вскрытия карт хостом...';
+            }
+            //setTimeout(compareScores, 500);
           }
-        } 
+        }
+        else if (msg.type === 'reveal') {
+          // 🔹 Клиент получает команду раскрыть карты
+          gameState.isRevealed = true;
+          updateUI();
+          setStatus('🎴 Карты раскрыты!');
+        }
         else if (msg.type === 'bust') {
           endGame('win');
         } 

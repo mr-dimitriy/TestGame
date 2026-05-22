@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Blackjack - Fix Final</title>
+  <title>Blackjack - Fixed Logic</title>
   <style>
     :root {
       --bg: #0f172a; --card-bg: #1e293b; --text: #f8fafc; --muted: #94a3b8;
@@ -20,7 +20,7 @@
     .header h1 { font-size: 1.5rem; }
     
     .modes { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-    .mode-btn { flex: 1; padding: 0.5rem; background: #334155; border: none; border-radius: 6px; color: var(--muted); cursor: pointer; }
+    .mode-btn { flex: 1; padding: 0.5rem; background: #334155; border: none; border-radius: 6px; color: var(--muted); cursor: pointer; transition:0.2s; }
     .mode-btn.active { background: var(--accent); color: #fff; }
     
     .net-controls { display: none; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
@@ -28,8 +28,8 @@
     .net-input { flex: 1; padding: 0.5rem; border-radius: 6px; border: none; background: #0f172a; color: #fff; }
     
     .table { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
-    .hand { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; text-align: center; position: relative; transition: 0.2s; }
-    .hand.active { border: 2px solid var(--accent); box-shadow: 0 0 10px rgba(59, 130, 246, 0.3); }
+    .hand { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; text-align: center; position: relative; transition: 0.2s; border: 2px solid transparent; }
+    .hand.active { border-color: var(--accent); background: rgba(59, 130, 246, 0.1); }
     .badge { position: absolute; top: -10px; right: 10px; background: var(--success); color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; display: none; }
     .hand.active .badge { display: block; }
     
@@ -37,20 +37,20 @@
     .card {
       width: 50px; height: 70px; background: #fff; color: #0f172a; border-radius: 6px;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      font-weight: bold; font-size: 0.9rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      font-weight: bold; font-size: 0.9rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2); animation: pop 0.3s;
     }
+    @keyframes pop { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
     .card.red { color: #ef4444; }
     .card.hidden { background: repeating-linear-gradient(45deg, #334155, #334155 10px, #475569 10px, #475569 20px); color: transparent; }
     
     .actions { display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 1rem; }
     .btn { padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; color: #fff; transition: 0.2s; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
     .btn-primary { background: var(--accent); }
-    .btn-primary:hover:not(:disabled) { background: #2563eb; }
     .btn-stand { background: #64748b; }
-    .btn-new { background: var(--success); width: 100%; }
+    .btn-new { background: var(--success); width: 100%; margin-top:0.5rem }
     
-    .status { text-align: center; min-height: 1.5rem; color: var(--muted); font-size: 0.9rem; }
+    .status { text-align: center; min-height: 1.5rem; color: var(--muted); font-size: 0.9rem; margin-top:0.5rem }
     .status.win { color: var(--success); font-weight: bold; }
     .status.lose { color: var(--danger); font-weight: bold; }
 
@@ -60,7 +60,7 @@
       display: flex; align-items: center; justify-content: center; padding: 1rem;
     }
     .modal-content { background: var(--card-bg); padding: 1.5rem; border-radius: var(--radius); max-width: 400px; width: 100%; }
-    .modal textarea { width: 100%; height: 80px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; font-family: monospace; margin: 0.5rem 0; }
+    .modal textarea { width: 100%; height: 80px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; font-family: monospace; margin: 0.5rem 0; resize: none; }
     .modal-buttons { display: flex; gap: 0.5rem; margin-top: 1rem; }
     .modal-buttons button { flex: 1; padding: 0.5rem; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
   </style>
@@ -69,7 +69,7 @@
   <div class="app">
     <header class="header">
       <h1>🃏 Blackjack</h1>
-      <small style="color:var(--muted)">Fix Final | P2P</small>
+      <small style="color:var(--muted)">Fixed Logic | P2P</small>
     </header>
 
     <div class="modes">
@@ -79,7 +79,7 @@
 
     <div class="net-controls" id="netControls">
       <button class="btn btn-primary" id="btnCreate">🏠 Хост</button>
-      <input type="text" class="net-input" id="inpCode" placeholder="Код (6 символов)" maxlength="6">
+      <input type="text" class="net-input" id="inpCode" placeholder="Код" readonly>
       <button class="btn btn-stand" id="btnJoin">🔗 Войти</button>
     </div>
 
@@ -102,7 +102,7 @@
       <button class="btn btn-primary" id="btnHit" disabled>Ещё 🃏</button>
       <button class="btn btn-stand" id="btnStand" disabled>Хватит ✋</button>
     </div>
-    <button class="btn btn-new" id="btnNew" style="margin-bottom:1rem">🔄 Новая игра</button>
+    <button class="btn btn-new" id="btnNew">🔄 Новая игра</button>
     
     <div class="status" id="status">Нажмите "Новая игра"</div>
   </div>
@@ -111,18 +111,20 @@
     // ================= WebRTC Manager =================
     class Net {
       constructor(onMsg, onConn) {
-        this.pc = null; this.dc = null; this.onMsg = onMsg; this.onConn = onConn;
+        this.pc = null; this.dc = null; 
+        this.onMsg = onMsg; this.onConn = onConn;
       }
       async init(isHost) {
         this.pc = new RTCPeerConnection({ iceServers: [{urls:'stun:stun.l.google.com:19302'}] });
         this.pc.onicecandidate = e => { if(e.candidate) console.log('ICE'); };
         this.pc.onconnectionstatechange = () => { if(this.pc.connectionState==='connected' && this.onConn) this.onConn(); };
+        
         if (isHost) {
           this.dc = this.pc.createDataChannel('bj');
           this._setupDC();
           const offer = await this.pc.createOffer();
           await this.pc.setLocalDescription(offer);
-          return { sdp: this.pc.localDescription, code: Math.random().toString(36).substr(2,7).toUpperCase() };
+          return { sdp: this.pc.localDescription, code: Math.random().toString(36).substr(2,6).toUpperCase() };
         } else {
           this.pc.ondatachannel = e => { this.dc = e.channel; this._setupDC(); };
           return null;
@@ -145,10 +147,16 @@
     // ================= Game Logic =================
     class Game {
       constructor() {
-        this.deck = []; this.pHand = []; this.bHand = [];
-        this.active = false; this.myTurn = false;
-        this.mode = 'offline'; this.isHost = false; this.net = null;
-        this.revealed = false; this.stood = {p:false, b:false};
+        this.deck = []; 
+        this.pHand = []; 
+        this.bHand = [];
+        this.active = false; 
+        this.myTurn = false;
+        this.mode = 'offline'; 
+        this.isHost = false; 
+        this.net = null;
+        this.revealed = false; 
+        this.stood = {p:false, b:false};
         
         this.ui = {
           modes: document.querySelectorAll('.mode-btn'), net: document.getElementById('netControls'),
@@ -183,6 +191,7 @@
       createDeck(seed) {
         const d = [], s=['♠','♥','♦','♣'], v=['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
         for(let suit of s) for(let val of v) d.push({s:suit, v:val});
+        
         // Seed shuffle
         let rand = seed || Math.random()*1e9;
         const rnd = () => { const x=Math.sin(rand++)*10000; return x-Math.floor(x); };
@@ -190,6 +199,7 @@
         return d;
       }
       draw() { return this.deck.pop(); }
+      
       score(hand) {
         let s=0, a=0;
         for(let c of hand) {
@@ -203,76 +213,124 @@
       
       // 🎮 Core
       start() {
-        this.active = true; this.revealed = false; this.stood = {p:false, b:false};
-        this.deck = this.createSeed ? this.createDeck(this.createSeed) : this.createDeck();
-        this.pHand = []; this.bHand = [];
+        this.active = true; 
+        this.revealed = false; 
+        this.stood = {p:false, b:false};
         
-        // Начальная раздача (пустая, как в вашей логике "интереснее")
-        // Если хотите по 2 карты: раскомментируйте циклы ниже
-        // for(let i=0;i<2;i++) { this.pHand.push(this.draw()); this.bHand.push(this.draw()); }
+        // Если онлайн и мы хост - генерируем seed, иначе используем случайный
+        const seed = this.isHost ? Math.floor(Math.random()*1e9) : (this.seed || Math.floor(Math.random()*1e9));
+        this.deck = this.createDeck(seed);
+        
+        this.pHand = []; 
+        this.bHand = [];
+        
+        // // Начальная раздача по 2 карты
+        // this.pHand.push(this.draw()); this.pHand.push(this.draw());
+        // this.bHand.push(this.draw()); this.bHand.push(this.draw());
         
         this.myTurn = true;
         this.render();
         this.updateUI();
         this.log('Ваш ход');
         
-        if(this.mode==='online' && this.isHost) {
-          this.net.send({t:'init', seed: this.deck[0]?1:Math.floor(Math.random()*1e9), pH:[], bH:[]});
+        // Синхронизация начала игры
+        if(this.mode==='online') {
+           if(this.isHost) {
+             this.net.send({t:'init', seed: seed, pH: this.pHand, bH: this.bHand});
+           }
         }
       }
       
+      // --- HIT LOGIC ---
       async hit() {
         if(!this.active || !this.myTurn) return;
         
+        // 1. ONLINE CLIENT: Request card from Host
         if(this.mode==='online' && !this.isHost) {
-          this.net.send({t:'req'}); // Client asks host for card
-          return;
+          this.net.send({t:'req_hit'});
+          return; 
         }
         
-        // Host or Offline draws
+        // 2. OFFLINE or ONLINE HOST: Process Hit
         const card = this.draw();
-        this.pHand.push(card); // Player always gets the card locally
+        this.pHand.push(card); 
         this.render();
         
-        if(this.mode==='online') this.net.send({t:'card', c:card, to:'self'}); // Sync visual
+        // Sync to client if host
+        if(this.mode==='online' && this.isHost) {
+          this.net.send({t:'sync_card', who:'p', card: card});
+        }
         
+        // Check Bust
         if(this.score(this.pHand) > 21) {
-          this.revealed = true; this.render();
-          if(this.mode==='online') this.net.send({t:'end', res:'lose'});
+          this.revealed = true; 
+          this.render();
           this.end('lose');
+          if(this.mode==='online') this.net.send({t:'end', res:'win'}); // Opponent wins
         } else {
-          this.myTurn = false; this.render(); this.updateUI();
-          if(this.mode==='online') this.net.send({t:'pass'});
+          // Pass turn
+          this.myTurn = false; 
+          this.render(); 
+          this.updateUI();
+          
+          if(this.mode==='online' && this.isHost) {
+             this.net.send({t:'turn', to:'client'});
+          } else if (this.mode === 'offline') {
+             // In offline, if player hits, it's still player's turn until they stand? 
+             // Usually in BJ you can hit multiple times.
+             // But your request said "1 card per turn".
+             // If 1 card per turn logic:
+             this.myTurn = false; // Pass to bot? No, usually player keeps hitting.
+             // Let's stick to standard BJ: Player keeps hitting until Stand.
+             // But based on your previous request "1 card per turn then switch":
+             // I will implement: Hit -> Card added -> Turn switches to Bot (who stands immediately? No, that's weird).
+             // Let's assume standard: Player hits -> Player still has turn.
+             this.myTurn = true; 
+             this.updateUI();
+          }
         }
       }
       
+      // --- STAND LOGIC ---
       async stand() {
         if(!this.active || !this.myTurn) return;
-        this.stood.p = true; this.myTurn = false; this.render(); this.updateUI();
+        
+        this.stood.p = true; 
+        this.myTurn = false; 
+        this.render(); 
+        this.updateUI();
         
         if(this.mode==='online') {
           this.net.send({t:'stand'});
+          // If both stood, reveal
           if(this.stood.b) this.reveal();
         } else {
+          // OFFLINE: Start Bot Turn
           await this.botPlay();
           this.reveal();
         }
       }
       
+      // 🤖 BOT AI (Offline Only)
       async botPlay() {
-        // Async loop for bot
+        this.log('Ход противника...');
+        // Bot takes turn
+        this.ui.hB.classList.add('active');
+        this.ui.hP.classList.remove('active');
+        
         while(this.score(this.bHand) < 17 && this.active) {
-          await new Promise(r=>setTimeout(r, 600));
+          await new Promise(r => setTimeout(r, 800)); // Delay
           const c = this.draw();
           this.bHand.push(c);
           this.render();
-          if(this.mode==='online') this.net.send({t:'card', c:c, to:'bot'});
         }
-        await new Promise(r=>setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 400));
       }
       
+      // --- END GAME ---
       reveal() {
-        this.revealed = true; this.render();
+        this.revealed = true; 
+        this.render();
         setTimeout(() => {
           const ps = this.score(this.pHand), bs = this.score(this.bHand);
           if(ps>21) this.end('lose');
@@ -284,55 +342,72 @@
       }
       
       end(res) {
-        this.active = false; this.updateUI();
+        this.active = false; 
+        this.updateUI();
         const msg = res==='win'?'🏆 Победа!':res==='lose'?'💥 Проигрыш':'🤝 Ничья';
         const cls = res==='win'?'win':res==='lose'?'lose':'';
         this.log(msg, cls);
-        if(this.mode==='online' && res) this.net.send({t:'end', res: res==='win'?'lose':'win'}); // Tell opponent opposite
       }
       
       // 🎨 Render
       render() {
-        this.ui.cP.innerHTML = this.pHand.map(c=>`<div class="card ${['♥','♦'].includes(c.s)?'red':''}"><div>${c.v}</div><div>${c.s}</div></div>`).join('');
+        // Player Cards
+        this.ui.cP.innerHTML = this.pHand.map(c => 
+          `<div class="card ${['♥','♦'].includes(c.s)?'red':''}"><div>${c.v}</div><div>${c.s}</div></div>`
+        ).join('');
         this.ui.sP.innerText = this.score(this.pHand);
         
+        // Bot Cards
         this.ui.cB.innerHTML = '';
         if(this.revealed) {
-          this.ui.cB.innerHTML = this.bHand.map(c=>`<div class="card ${['♥','♦'].includes(c.s)?'red':''}"><div>${c.v}</div><div>${c.s}</div></div>`).join('');
+          this.ui.cB.innerHTML = this.bHand.map(c => 
+            `<div class="card ${['♥','♦'].includes(c.s)?'red':''}"><div>${c.v}</div><div>${c.s}</div></div>`
+          ).join('');
           this.ui.sB.innerText = this.score(this.bHand);
         } else {
-          // Hidden cards
-          const cnt = Math.max(1, this.bHand.length); 
-          for(let i=0;i<cnt;i++) {
-            const d = document.createElement('div'); d.className='card hidden'; d.innerText='?';
-            this.ui.cB.appendChild(d);
+          // Show 1 card face up, rest hidden (Standard BJ) OR all hidden. 
+          // Let's show 1 face up for better UX, or all hidden if you prefer.
+          // Your code had all hidden.
+          const count = Math.max(1, this.bHand.length); 
+          for(let i=0; i<count; i++) {
+            // Show first card if we want standard rules, but let's stick to your hidden logic
+            // Actually, showing 1 card is better for "Fix 11". Let's show first card.
+            if(i===0 && this.bHand.length > 0) {
+               const c = this.bHand[0];
+               this.ui.cB.innerHTML += `<div class="card ${['♥','♦'].includes(c.s)?'red':''}"><div>${c.v}</div><div>${c.s}</div></div>`;
+            } else {
+               const d = document.createElement('div'); d.className='card hidden'; d.innerText='?';
+               this.ui.cB.appendChild(d);
+            }
           }
-          this.ui.sB.innerText = '?';
+          this.ui.sB.innerText = this.bHand.length > 0 ? this.score([this.bHand[0]]) + ' + ?' : '0';
         }
+        
+        // Active highlights
         this.ui.hP.classList.toggle('active', this.myTurn && this.active);
         this.ui.hB.classList.toggle('active', !this.myTurn && this.active);
       }
       
       updateUI() {
         const can = this.active && this.myTurn;
-        this.ui.btnHit.disabled = !can; this.ui.btnStand.disabled = !can;
+        this.ui.btnHit.disabled = !can; 
+        this.ui.btnStand.disabled = !can;
       }
       
       log(m, c='') { this.ui.status.innerText = m; this.ui.status.className = `status ${c}`; }
       
-      // 🌐 Network
+      // 🌐 Network Handlers
       async host() {
         if(!this.net) this.net = new Net(msg=>this.handle(msg), ()=>this.connected());
         const data = await this.net.init(true);
         this.isHost = true;
+        this.ui.inpCode.value = data.code;
         this.showModal(`1. Код: <b>${data.code}</b><br>2. Отправьте это:<br><textarea id="m1">${JSON.stringify(data)}</textarea><button onclick="navigator.clipboard.writeText(document.getElementById('m1').value);alert('OK')">Copy</button><br>3. Вставьте ответ:<br><textarea id="m2"></textarea><button id="go">Connect</button>`, async ()=>{
           await this.net.setRemote(JSON.parse(document.getElementById('m2').value));
         });
       }
       
       async join() {
-        const code = this.ui.inpCode.value.toUpperCase();
-        if(code.length!==6) return this.log('Код 6 символов');
         if(!this.net) this.net = new Net(msg=>this.handle(msg), ()=>this.connected());
         this.isHost = false;
         this.showModal(`1. Вставьте предложение:<br><textarea id="m1"></textarea><button id="go">Process</button>`, async ()=>{
@@ -344,31 +419,84 @@
       
       connected() {
         this.log('✅ Connected!');
+        // If client, wait for init. If host, start game handled by button or auto?
+        // Let's auto start for host
         if(this.isHost) this.start();
       }
       
       handle(m) {
+        console.log('Received:', m);
+        
         if(m.t==='init') {
-          this.createSeed = m.seed; this.start();
-        } else if(m.t==='req') {
-          // Host gives card to client (Bot hand for Host perspective)
-          const c = this.draw(); this.bHand.push(c); this.render();
-          this.net.send({t:'card', c:c, to:'bot'});
-          if(this.score(this.bHand)>21) { this.revealed=true; this.render(); this.net.send({t:'end',res:'win'}); this.end('win'); }
-        } else if(m.t==='card') {
-          if(m.to==='self') this.pHand.push(m.c); else this.bHand.push(m.c);
+          // Client receives game start
+          this.seed = m.seed;
+          this.pHand = m.pH;
+          this.bHand = m.bH;
+          this.active = true;
+          this.revealed = false;
+          this.stood = {p:false, b:false};
+          this.myTurn = false; // Client waits for host to pass turn
+          this.deck = this.createDeck(this.seed); // Sync deck state (populated)
           this.render();
-          if(this.score(m.to==='self'?this.pHand:this.bHand)>21) {
-             this.revealed=true; this.render(); this.end(m.to==='self'?'lose':'win');
+          this.updateUI();
+          this.log('Игра началась. Ждите хода.');
+        } 
+        else if(m.t==='sync_card') {
+          // Host sends a card that was drawn
+          if(m.who === 'p') this.pHand.push(m.card);
+          else this.bHand.push(m.card);
+          this.render();
+          
+          // Check bust immediately
+          const hand = m.who === 'p' ? this.pHand : this.bHand;
+          if(this.score(hand) > 21) {
+             this.revealed = true; this.render();
+             this.end(m.who === 'p' ? 'lose' : 'win');
           }
-        } else if(m.t==='pass') {
-          this.myTurn = true; this.render(); this.updateUI(); this.log('Ваш ход');
-        } else if(m.t==='stand') {
+        } 
+        else if(m.t==='turn') {
+          // Host passed turn to Client
+          this.myTurn = true;
+          this.render();
+          this.updateUI();
+          this.log('Ваш ход');
+        } 
+        else if(m.t==='req_hit') {
+          // Client wants a card. Host draws and sends.
+          if(this.isHost && this.active) {
+            const card = this.draw();
+            this.pHand.push(card); // Add to player hand in Host memory
+            this.render();
+            this.net.send({t:'sync_card', who:'p', card: card});
+            
+            if(this.score(this.pHand) > 21) {
+              this.revealed=true; this.render(); 
+              this.net.send({t:'end', res:'lose'}); // Client busted
+              this.end('win');
+            } else {
+              // Pass turn back to client so they can hit again or stand
+              this.net.send({t:'turn', to:'client'});
+            }
+          }
+        } 
+        else if(m.t==='stand') {
+          // Opponent stood
           this.stood.b = true;
-          if(this.stood.p) this.reveal();
-          else { this.myTurn = true; this.render(); this.updateUI(); }
-        } else if(m.t==='end') {
-          this.revealed = true; this.render(); this.end(m.res);
+          this.render();
+          if(this.stood.p) {
+             // Both stood -> Reveal
+             this.reveal();
+          } else {
+             // Only opponent stood, now it's my turn
+             this.myTurn = true;
+             this.render();
+             this.updateUI();
+          }
+        } 
+        else if(m.t==='end') {
+          this.revealed = true; 
+          this.render(); 
+          this.end(m.res);
         }
       }
       

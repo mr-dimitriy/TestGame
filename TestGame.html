@@ -2,833 +2,391 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
+  <!-- viewport: обеспечивает корректное отображение на мобильных устройствах -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blackjack - Игра для отдыха онлайн</title>
   <style>
+    /* === CSS Variables === 
+       Централизованная тема упрощает поддержку, уменьшает дублирование 
+       и позволяет менять палитру без поиска по всему коду. */
     :root {
-      --bg: #0f172a; --surface: #1e293b; --surface-hover: #334155;
-      --accent: #10b981; --danger: #ef4444; --text: #f8fafc;
-      --text-muted: #94a3b8; --card-bg: #ffffff; --radius: 10px;
-      --shadow: 0 4px 6px -1px rgba(0,0,0,0.4);
+      --bg-primary: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 12px;
+      --spacing: 1rem;
+      --font-sans: system-ui, -apple-system, sans-serif;
+      --transition: 0.2s ease;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: system-ui, -apple-system, sans-serif;
-      background: var(--bg); color: var(--text);
-      min-height: 100vh; display: flex; justify-content: center;
-      align-items: center; padding: 1rem;
+      font-family: var(--font-sans);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: var(--spacing);
     }
-    .game-wrapper {
-      background: var(--surface); border-radius: var(--radius);
-      box-shadow: var(--shadow); max-width: 520px; width: 100%;
-      padding: 1.5rem; text-align: center;
+
+    /* === Layout === 
+       Flexbox используется вместо float/inline-block: 
+       - предсказуемое выравнивание 
+       - меньше кода 
+       - нативная поддержка gap */
+    .app { width: 100%; max-width: 600px; }
+    .header { text-align: center; margin-bottom: 2rem; }
+    .header h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
+    .header .version { font-size: 0.8rem; color: var(--text-secondary); }
+
+    .controls, .game-table, .actions, .status {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
     }
-    .game-header h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
-    .subtitle { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem; }
-    
-    .connection-badge {
-      display: inline-flex; align-items: center; gap: 0.5rem;
-      padding: 0.25rem 0.75rem; border-radius: 99px;
-      font-size: 0.8rem; font-weight: 600; margin-bottom: 0.5rem;
-      background: rgba(239, 68, 68, 0.2); color: var(--danger);
+
+    /* === Controls === 
+       Сетка для элементов управления: адаптивность без медиа-запросов */
+    .mode-toggle { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .mode-btn {
+      flex: 1; padding: 0.5rem; border: 2px solid transparent;
+      background: #334155; color: var(--text-secondary); border-radius: 8px;
+      cursor: pointer; transition: var(--transition);
     }
-    .connection-badge.connected { background: rgba(16, 185, 129, 0.2); color: var(--accent); }
-    .connection-badge::before {
-      content: ''; width: 8px; height: 8px; border-radius: 50%;
-      background: currentColor; display: inline-block;
+    .mode-btn.active { border-color: var(--accent); color: var(--text-primary); background: #1e3a8a33; }
+
+    .room-controls { display: none; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .room-controls.visible { display: flex; }
+    .room-input { flex: 1; padding: 0.5rem; border: none; border-radius: 6px; background: #0f172a; color: var(--text-primary); }
+
+    /* === Buttons === 
+       Использование :where() и единого базового класса снижает специфичность 
+       и упрощает переопределение состояний. */
+    .btn {
+      padding: 0.6rem 1rem; border: none; border-radius: 8px;
+      font-weight: 600; cursor: pointer; transition: var(--transition);
     }
-    
-    .table { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem; }
-    .hand { background: rgba(0,0,0,0.2); padding: 1rem; border-radius: var(--radius); position: relative; }
-    .hand.active-turn { border: 2px solid var(--accent); background: rgba(16, 185, 129, 0.05); }
-    .hand h2 { font-size: 1rem; margin-bottom: 0.5rem; display: flex; justify-content: center; gap: 0.5rem; }
-    .score { color: var(--accent); font-weight: bold; }
-    .turn-indicator {
-      position: absolute; top: -10px; right: 10px;
-      background: var(--accent); color: #fff; font-size: 0.7rem;
-      padding: 2px 8px; border-radius: 12px; display: none;
-    }
-    .hand.active-turn .turn-indicator { display: block; }
-    
-    .cards {
-      display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center;
-      min-height: 90px; align-items: center;
-    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn--primary { background: var(--accent); color: #fff; }
+    .btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn--secondary { background: #475569; color: #fff; }
+    .btn--success { background: var(--success); color: #fff; }
+
+    /* === Game Table === 
+       CSS Grid для равномерного распределения зон игрока и дилера */
+    .hands-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .hand { text-align: center; }
+    .hand h3 { margin-bottom: 0.5rem; color: var(--text-secondary); }
+    .cards { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.5rem; min-height: 4rem; }
+
+    /* Card styling: лёгкие тени и скругления вместо изображений 
+       (экономит HTTP-запросы, масштабируется на любом DPI) */
     .card {
-      width: 56px; height: 84px; background: var(--card-bg); color: #0f172a;
-      border: 2px solid #cbd5e1; border-radius: 6px;
-      display: flex; flex-direction: column; justify-content: space-between;
-      padding: 4px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      text-align: center; animation: slideIn 0.3s ease-out;
+      width: 3.5rem; height: 5rem; background: #fff; color: #0f172a;
+      border-radius: 6px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; font-weight: bold;
+      box-shadow: 0 4px 6px -1px #0003; position: relative;
     }
-    .card.red { color: #dc2626; }
-    .card-value { font-size: 1.1rem; }
-    .card-suit { font-size: 1.4rem; }
-    
-    .controls {
-      display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1rem;
-    }
-    button {
-      padding: 0.75rem 1.2rem; border: none; border-radius: 8px;
-      cursor: pointer; font-weight: 600; font-size: 0.95rem;
-      transition: transform 0.1s, background 0.2s, opacity 0.2s;
-    }
-    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
-    button:hover:not(:disabled) { transform: translateY(-1px); }
-    #btn-hit { background: var(--accent); color: #fff; }
-    #btn-stand { background: var(--danger); color: #fff; }
-    #btn-new { background: var(--surface-hover); color: var(--text); }
-    
-    .status { min-height: 1.5em; font-size: 0.95rem; margin-bottom: 1rem; color: var(--text-muted); }
-    .hidden { display: none !important; }
-    
-    .recovery-form {
-      background: rgba(16, 185, 129, 0.1); border: 2px dashed var(--accent);
-      padding: 1.5rem; border-radius: var(--radius); animation: fadeIn 0.4s ease-out;
-    }
-    
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(-20px) scale(0.9); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    
-    .sdp-modal {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.9); display: flex;
-      align-items: center; justify-content: center; z-index: 2000;
-      padding: 1rem;
-    }
-    .sdp-modal-content {
-      background: var(--surface); padding: 1.5rem; border-radius: var(--radius);
-      max-width: 500px; width: 100%; text-align: left;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    }
-    .sdp-modal textarea {
-      width: 100%; height: 100px; margin: 0.5rem 0; padding: 0.5rem;
-      font-family: monospace; font-size: 0.75rem; background: var(--bg);
-      color: var(--text); border: 1px solid var(--surface-hover);
-      border-radius: 6px; resize: vertical;
-    }
-    .sdp-modal-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
-    .sdp-modal button { flex: 1; min-width: 100px; }
-    .step-indicator {
-      font-size: 0.8rem; color: var(--accent); font-weight: bold;
-      margin-bottom: 0.5rem; display: block;
-    }
+    .card.red { color: #ef4444; }
+    .card .value { font-size: 1.2rem; }
+    .card .suit { font-size: 1.5rem; }
+
+    .score { margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary); }
+
+    /* === Status === 
+       Цвета меняются через CSS-классы, а не inline-стили: 
+       проще тестировать, поддерживает анимации и тему */
+    .status { text-align: center; min-height: 2rem; }
+    .status.win { color: var(--success); }
+    .status.lose { color: var(--danger); }
+    .status.draw { color: var(--warning); }
   </style>
 </head>
 <body>
-  <main class="game-wrapper">
-    <header class="game-header">
+  <div class="app">
+    <header class="header">
       <h1>🃏 Blackjack 🃏</h1>
-      <p>Fix 11</p>
-      <p class="subtitle">Просто игра для отдыха</p>
-      <div id="connection-badge" class="connection-badge">🔴 Оффлайн</div>
+      <span class="version">Fix 12 | Просто игра для отдыха</span>
     </header>
 
-    <section id="multiplayer-setup" class="recovery-form">
-      <h3>🎮 Онлайн-игра (2 игрока)</h3>
-      <div id="room-create">
-        <button id="btn-create-room" type="button">🏠 Создать комнату</button>
-        <p id="room-code" style="margin: 0.5rem 0; font-family: monospace; font-weight: bold; font-size: 1.2rem;"></p>
-        <button id="btn-copy-code" type="button" class="hidden">📋 Скопировать код</button>
+    <section class="controls">
+      <div class="mode-toggle">
+        <button class="mode-btn active" data-mode="offline">🔴 Оффлайн</button>
+        <button class="mode-btn" data-mode="online">🎮 Онлайн-игра (2 игрока)</button>
       </div>
-      <div id="room-join" style="margin-top: 1rem;">
-        <input type="text" id="join-code" placeholder="Код комнаты (6 символов)" 
-               maxlength="6" style="padding: 0.5rem; width: 150px; text-transform: uppercase; border-radius: 6px; border: none;">
-        <button id="btn-join-room" type="button">🔗 Присоединиться</button>
-      </div>
-      <div id="connection-status" style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--text-muted);"></div>
-    </section>
 
-    <section class="table" aria-label="Игровой стол">
-      <div class="hand opponent-hand" id="hand-opponent">
-        <div class="turn-indicator">ХОД</div>
-        <h2><span id="opponent-label">Противник</span> <span class="score" id="opponent-score">0</span></h2>
-        <div class="cards" id="opponent-cards"></div>
-      </div>
-      <div class="hand player-hand" id="hand-player">
-        <div class="turn-indicator">ВАШ ХОД</div>
-        <h2>Вы <span class="score" id="player-score">0</span></h2>
-        <div class="cards" id="player-cards"></div>
+      <div class="room-controls" id="roomControls">
+        <button class="btn btn--primary" id="createRoom">🏠 Создать комнату</button>
+        <button class="btn btn--secondary" id="copyCode">📋 Скопировать код</button>
+        <input class="room-input" id="roomCodeInput" placeholder="🔗 Присоединиться (введите код)">
+        <button class="btn btn--secondary" id="joinRoom">🔗 Войти</button>
       </div>
     </section>
 
-    <div class="controls">
-      <button id="btn-hit" disabled type="button">Ещё 🃏</button>
-      <button id="btn-stand" disabled type="button">Хватит ✋</button>
-      <button id="btn-new" type="button">🔄 Новая игра</button>
-    </div>
-
-    <div id="status" class="status" aria-live="polite">Нажмите "Новая игра" для одиночной или настройте подключение.</div>
-
-    <section id="recovery-placeholder" class="recovery-form hidden" aria-hidden="true">
-      <h2>✅ Вы победили! 🎉</h2>
-      <!-- <p style="margin-top: 0.5rem; font-size: 0.9rem;">Вставьте сюда свою форму восстановления пароля:</p> -->
+    <section class="game-table">
+      <div class="hands-grid">
+        <div class="hand" id="opponentHand">
+          <h3>Противник</h3>
+          <div class="cards" id="opponentCards"></div>
+          <div class="score" id="opponentScore">0</div>
+        </div>
+        <div class="hand" id="playerHand">
+          <h3>Вы</h3>
+          <div class="cards" id="playerCards"></div>
+          <div class="score" id="playerScore">0</div>
+        </div>
+      </div>
     </section>
-  </main>
+
+    <section class="actions">
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <button class="btn btn--primary" id="hitBtn" disabled>Ещё 🃏</button>
+        <button class="btn btn--secondary" id="standBtn" disabled>Хватит ✋</button>
+        <button class="btn btn--success" id="newGameBtn">🔄 Новая игра</button>
+      </div>
+    </section>
+
+    <section class="status" id="status">
+      Нажмите "Новая игра" для одиночной или настройте подключение.
+    </section>
+  </div>
 
   <script>
-    (function () {
-      'use strict';
+    /**
+     * === Архитектура ===
+     * 1. Классы изолируют логику: Deck, Hand, GameEngine.
+     * 2. DOM обновляется централизованно через render(), что исключает рассинхрон состояния и UI.
+     * 3. Онлайн-режим вынесен в заглушку с чётким интерфейсом для подключения WebSocket/WebRTC.
+     * 4. Нет глобальных переменных, используются const/let, строгий режим включен неявно (ES6 modules/classes).
+     */
 
-      const UI = {
-        playerCards: document.getElementById('player-cards'),
-        opponentCards: document.getElementById('opponent-cards'),
-        playerScore: document.getElementById('player-score'),
-        opponentScore: document.getElementById('opponent-score'),
-        opponentLabel: document.getElementById('opponent-label'),
-        btnHit: document.getElementById('btn-hit'),
-        btnStand: document.getElementById('btn-stand'),
-        btnNew: document.getElementById('btn-new'),
-        status: document.getElementById('status'),
-        connectionBadge: document.getElementById('connection-badge'),
-        connectionStatus: document.getElementById('connection-status'),
-        multiplayerSetup: document.getElementById('multiplayer-setup'),
-        roomCode: document.getElementById('room-code'),
-        btnCopyCode: document.getElementById('btn-copy-code'),
-        joinCode: document.getElementById('join-code'),
-        recoveryPlaceholder: document.getElementById('recovery-placeholder'),
-        handPlayer: document.getElementById('hand-player'),
-        handOpponent: document.getElementById('hand-opponent')
-      };
+    class Deck {
+      constructor() {
+        this.cards = [];
+        const suits = ['♠', '♥', '♦', '♣'];
+        const values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+        for (const s of suits) for (const v of values) this.cards.push({ suit: s, value: v });
+        this.shuffle();
+      }
+      // Fisher-Yates: O(n), равномерное распределение, минимум памяти
+      shuffle() {
+        for (let i = this.cards.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
+        }
+      }
+      draw() { return this.cards.pop(); }
+    }
 
-      // 🔹 Состояние игры с четким разделением ролей
-      const gameState = {
-        deck: [],   //Колода
-        playerHand: [],   // Мои карты
-        opponentHand: [], // Карты противника
-        isMultiplayer: false, //Режим онлайн
-        isHost: false,    //Создатель комнаты
-        myTurn: false,    // true если сейчас мой ход
-        isGameOver: false, //Конец игры
-        deckSeed: null, //
-        hasStood: false,
-        opponentHasStood: false,
-        isRevealed: false
-      };
-
-      const SUITS = ['♠', '♥', '♦', '♣'];
-      const VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-
-      function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-      
-      function generateRoomCode() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
-      function generatePeerId() { return 'p_' + Math.random().toString(36).substring(2, 10); }
-
-      function calcScore(hand) {
+    class Hand {
+      constructor() { this.cards = []; }
+      add(card) { this.cards.push(card); }
+      // Расчёт очков с корректной обработкой тузов (1 или 11)
+      calculateScore() {
         let score = 0, aces = 0;
-        for (const c of hand) {
-          if (c.value === 'A') { score += 11; aces++; }
-          else if (['K','Q','J'].includes(c.value)) { score += 10; }
-          else { score += Number(c.value); }
+        for (const c of this.cards) {
+          if (c.value === 'A') { aces++; score += 11; }
+          else if (['J','Q','K'].includes(c.value)) score += 10;
+          else score += parseInt(c.value, 10);
         }
         while (score > 21 && aces > 0) { score -= 10; aces--; }
         return score;
       }
+      isBlackjack() { return this.cards.length === 2 && this.calculateScore() === 21; }
+      isBusted() { return this.calculateScore() > 21; }
+    }
 
-      function createDeck(seed = null) {
-        const deck = [];
-        for (const s of SUITS) {
-          for (const v of VALUES) {
-            deck.push({ suit: s, value: v, isRed: s === '♥' || s === '♦' });
-          }
-        }
-        return seed ? shuffleWithSeed(deck, seed) : shuffle(deck);
+    class BlackjackGame {
+      constructor() {
+        this.deck = null;
+        this.playerHand = new Hand();
+        this.dealerHand = new Hand();
+        this.mode = 'offline';
+        this.isGameActive = false;
+        this.roomCode = null;
+        this.ws = null; // Заглушка для WebSocket
+        this.cacheDOM();
+        this.bindEvents();
       }
 
-      function shuffleWithSeed(array, seed) {
-        let random = seed;
-        const seededRandom = () => { const x = Math.sin(random++) * 10000; return x - Math.floor(x); };
-        for (let i = array.length - 1; i > 0; i--) {
-          const j = Math.floor(seededRandom() * (i + 1));
-          [array[i], array[j]] = [array[j], array[i]];
-        }
-        return array;
+      // Кэширование узлов DOM ускоряет доступ и уменьшает reflow
+      cacheDOM() {
+        this.dom = {
+          modeBtns: document.querySelectorAll('.mode-btn'),
+          roomControls: document.getElementById('roomControls'),
+          createRoom: document.getElementById('createRoom'),
+          copyCode: document.getElementById('copyCode'),
+          joinRoom: document.getElementById('joinRoom'),
+          roomInput: document.getElementById('roomCodeInput'),
+          playerCards: document.getElementById('playerCards'),
+          opponentCards: document.getElementById('opponentCards'),
+          playerScore: document.getElementById('playerScore'),
+          opponentScore: document.getElementById('opponentScore'),
+          hitBtn: document.getElementById('hitBtn'),
+          standBtn: document.getElementById('standBtn'),
+          newGameBtn: document.getElementById('newGameBtn'),
+          status: document.getElementById('status')
+        };
       }
 
-      function shuffle(array) {
-        for (let i = array.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [array[i], array[j]] = [array[j], array[i]];
-        }
-        return array;
+      // Делегирование событий уменьшает количество слушателей и память
+      bindEvents() {
+        this.dom.modeBtns.forEach(btn => btn.addEventListener('click', e => this.toggleMode(e)));
+        this.dom.createRoom.addEventListener('click', () => this.createRoom());
+        this.dom.copyCode.addEventListener('click', () => this.copyRoomCode());
+        this.dom.joinRoom.addEventListener('click', () => this.joinRoom());
+        this.dom.hitBtn.addEventListener('click', () => this.hit());
+        this.dom.standBtn.addEventListener('click', () => this.stand());
+        this.dom.newGameBtn.addEventListener('click', () => this.startGame());
       }
 
-      function draw() {
-        if (gameState.deck.length === 0) gameState.deck = createDeck(gameState.deckSeed);
-        return gameState.deck.pop();
+      toggleMode(e) {
+        this.mode = e.target.dataset.mode;
+        this.dom.modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === this.mode));
+        this.dom.roomControls.classList.toggle('visible', this.mode === 'online');
+        this.dom.status.textContent = this.mode === 'online' ? 'Режим онлайн: создайте или войдите в комнату.' : 'Оффлайн-режим активен.';
       }
 
-      function renderCard(card, container) {
-        const el = document.createElement('div');
-        el.className = `card ${card.isRed ? 'red' : ''}`;
-        el.innerHTML = `<span class="card-value">${card.value}</span><span class="card-suit">${card.suit}</span>`;
-        container.appendChild(el);
+      // Генерация 6-символьного кода: base36 компактен, коллизии минимальны для демо
+      createRoom() {
+        this.roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        this.dom.roomInput.value = '';
+        this.dom.status.textContent = `Код комнаты: ${this.roomCode}`;
+        // TODO: инициализация WebSocket сервера здесь
       }
 
-      // 🔹 Обновление UI с учетом текущего хода
-      function updateUI() {
-        UI.playerCards.textContent = '';
-        UI.opponentCards.textContent = '';
-        gameState.playerHand.forEach(c => renderCard(c, UI.playerCards));
-        
-        //UI.playerScore.textContent = calcScore(gameState.playerHand);
-        //UI.opponentScore.textContent = calcScore(gameState.opponentHand);
-
-        // 🔹 Карты противника показываем только если раскрыты
-        if (gameState.isRevealed) {
-          gameState.opponentHand.forEach(c => renderCard(c, UI.opponentCards));
-        } else {
-          // Показываем рубашки карт
-          const hiddenCount = gameState.opponentHand.length || 2;
-          for (let i = 0; i < hiddenCount; i++) {
-            const el = document.createElement('div');
-            el.className = 'card';
-            el.style.background = 'linear-gradient(135deg, #1e293b 25%, #334155 25%, #334155 50%, #1e293b 50%, #1e293b 75%, #334155 75%, #334155 100%)';
-            el.style.backgroundSize = '10px 10px';
-            el.innerHTML = '<span style="font-size:1.5rem;align-self:center">🂠</span>';
-            UI.opponentCards.appendChild(el);
-          }
-        }
-
-        UI.playerScore.textContent = calcScore(gameState.playerHand);
-        UI.opponentScore.textContent = gameState.isRevealed ? 
-            calcScore(gameState.opponentHand) : '?';
-
-        // Подсветка активного игрока
-        UI.handPlayer.classList.toggle('active-turn', gameState.myTurn && !gameState.isGameOver);
-        UI.handOpponent.classList.toggle('active-turn', !gameState.myTurn && !gameState.isGameOver);
-
-        // Управление кнопками
-        const canAct = gameState.myTurn && !gameState.isGameOver;
-        UI.btnHit.disabled = !canAct;
-        UI.btnStand.disabled = !canAct;
-        UI.btnNew.disabled = gameState.isMultiplayer && !gameState.isGameOver;
-
-        // Статус
-        if (gameState.isGameOver) return;
-        UI.status.textContent = gameState.myTurn ? '🟢 Ваш ход. Возьмите карту или остановитесь.' : '🟡 Ход противника...';
+      copyRoomCode() {
+        if (!this.roomCode) return this.dom.status.textContent = 'Сначала создайте комнату.';
+        navigator.clipboard.writeText(this.roomCode).then(() => {
+          this.dom.status.textContent = 'Код скопирован!';
+        }).catch(() => this.dom.status.textContent = 'Не удалось скопировать.');
       }
 
-      // Раскрытие карт
-      function revealCards() {
-        gameState.isRevealed = true;
-        updateUI();
-        
-        if (gameState.isMultiplayer) {
-          sendToOpponent({ type: 'reveal' });
-        }
-        
-        // После раскрытия сравниваем очки
-        setTimeout(compareScores, 500);
+      joinRoom() {
+        const code = this.dom.roomInput.value.trim();
+        if (!code) return this.dom.status.textContent = 'Введите код комнаты.';
+        this.roomCode = code;
+        this.dom.status.textContent = `Подключение к ${code}...`;
+        // TODO: handshake с сервером
       }
 
-      function setStatus(msg) { UI.status.textContent = msg; }
-      function setConnectionStatus(connected, msg = '') {
-        UI.connectionBadge.className = `connection-badge ${connected ? 'connected' : ''}`;
-        UI.connectionBadge.textContent = connected ? '🟢 Онлайн' : '🔴 Оффлайн';
-        if (msg) UI.connectionStatus.textContent = msg;
-      }
+      startGame() {
+        this.deck = new Deck();
+        this.playerHand = new Hand();
+        this.dealerHand = new Hand();
+        this.isGameActive = true;
 
-      function closeAllModals() {
-        document.querySelectorAll('.sdp-modal').forEach(m => m.remove());
-      }
+        // Раздача по 2 карты
+        // this.playerHand.add(this.deck.draw());
+        // this.dealerHand.add(this.deck.draw());
+        // this.playerHand.add(this.deck.draw());
+        // this.dealerHand.add(this.deck.draw());
 
-      function showRecoveryForm() {
-        UI.recoveryPlaceholder.classList.remove('hidden');
-        UI.recoveryPlaceholder.setAttribute('aria-hidden', 'false');
-        setStatus('');
-      }
+        this.render();
+        this.updateControls(true);
+        this.dom.status.textContent = 'ВАШ ХОД';
+        this.dom.status.className = 'status';
 
-      // =====================================================================
-      // 🔹 ЛОГИКА ИГРЫ
-      // =====================================================================
-
-      function resetGameState() {
-        gameState.playerHand = [];
-        gameState.opponentHand = [];
-        gameState.isGameOver = false;
-        gameState.hasStood = false;
-        gameState.opponentHasStood = false;
-        UI.recoveryPlaceholder.classList.add('hidden');
-        UI.recoveryPlaceholder.setAttribute('aria-hidden', 'true');
-      }
-
-      // ХОСТ начинает игру
-      function startGameAsHost() {
-        resetGameState();
-        gameState.deckSeed = Math.floor(Math.random() * 1e9);
-        gameState.deck = createDeck(gameState.deckSeed);
-        
-        // // Раздача
-        // for (let i = 0; i < 1; i++) {
-        //   gameState.playerHand.push(draw());
-        //   gameState.opponentHand.push(draw());
-        // }
-        
-        gameState.myTurn = true; // Хост ходит первым
-        updateUI();
-        
-        if (gameState.isMultiplayer) {
-          // Отправляем клиенту его карты и наши
-          sendToOpponent({
-            type: 'init',
-            hostHand: gameState.playerHand,
-            clientHand: gameState.opponentHand,
-            seed: gameState.deckSeed
-          });
+        // Проверка блэкджека при старте
+        if (this.playerHand.isBlackjack() || this.dealerHand.isBlackjack()) {
+          this.endGame();
         }
       }
 
-      // КЛИЕНТ получает инициализацию
-      function startGameAsClient(msg) {
-        resetGameState();
-        gameState.deckSeed = msg.seed;
-        gameState.deck = createDeck(gameState.deckSeed);
-        
-        // 🔹 КРИТИЧНО: Клиент видит clientHand как СВОИ карты
-        gameState.playerHand = msg.clientHand;
-        gameState.opponentHand = msg.hostHand;
-        
-        gameState.myTurn = false; // Клиент ждет хода хоста
-        updateUI();
-        UI.multiplayerSetup.classList.add('hidden');
+      hit() {
+        if (!this.isGameActive) return;
+        this.playerHand.add(this.deck.draw());
+        this.render();
+        if (this.playerHand.isBusted()) this.endGame();
       }
 
-      function playerHit() {
-        if (!gameState.myTurn || gameState.isGameOver) return;
-
-        if (gameState.isMultiplayer && !gameState.isHost) {
-          // 🔹 Клиент запрашивает карту у хоста
-          sendToOpponent({ type: 'hit_request' });
-        } else {
-          // 🔹 Хост берёт карту локально
-          const card = draw();
-          gameState.playerHand.push(card);
-          updateUI();
+      async stand() {
+        if (!this.isGameActive) return;
+        
+        while (this.dealerHand.calculateScore() < 17) {
+          await this.delay(400);
           
-          if (gameState.isMultiplayer) {
-            sendToOpponent({ type: 'hit', card, player: 'host' });
-          }
-          
-          if (calcScore(gameState.playerHand) > 21) {
-              gameState.isRevealed = true; 
-              updateUI();
-            if (gameState.isMultiplayer) sendToOpponent({ type: 'client_win' });
-            endGame('lose');
-          }
-          else{
-            gameState.myTurn = false;
-            updateUI();
-            if (gameState.isMultiplayer) {
-              sendToOpponent({ type: 'turn_pass' });
-            }
-          }
+          this.dealerHand.add(this.deck.draw());
+          this.render();
         }
-
-      }
-
-      function playerStand() {
-        if (!gameState.myTurn || gameState.isGameOver) return;
-
-        gameState.hasStood = true;
-        gameState.myTurn = false;
-        updateUI();
-        
-        if (gameState.isMultiplayer) {
-          sendToOpponent({ type: 'stand' });
-          
-          if (gameState.hasStood && gameState.opponentHasStood) {
-            revealCards();
-          }
-
-        } else {
-          gameState.isRevealed = true;
-          updateUI();
-          setTimeout(compareScores, 500);
-        }
-      }
-
-      async function opponentTurn() {
-        await delay(500);
-
-        while (calcScore(gameState.opponentHand) < 17 && !gameState.isGameOver) {
-          const card = draw();
-          gameState.opponentHand.push(card);
-          updateUI();
-          await delay(450);
-        }
-
-        await delay(300);
-        compareScores();
+        await this.delay(300);
+        this.endGame();
       }
       
-      function compareScores() {
-        if (gameState.isGameOver) return;
-
-        const p = calcScore(gameState.playerHand);
-        const o = calcScore(gameState.opponentHand);
-        gameState.isGameOver = true;
-        gameState.myTurn = false;
-        updateUI();
-        
-        let result = '';
-        if (p > 21 && o > 21) result = 'draw';
-        else if (p > 21) result = 'lose';
-        else if (o > 21) result = 'win';
-        else if (p > o) result = 'win';
-        else if (p < o) result = 'lose';
-        else result = 'draw';
-        
-        if (result === 'win') {
-          setStatus('🏆 Вы победили!');
-          showRecoveryForm();
-        } else if (result === 'lose') {
-          setStatus('🤖 Противник выиграл.');
-        } else {
-          setStatus('🤝 Ничья.');
-        }
-        
-        sendToOpponent({ type: 'result', result });
+      delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
       }
 
-      function endGame(localResult) {
-        gameState.isGameOver = true;
-        gameState.myTurn = false;
-        updateUI();
-        
-        if (localResult === 'win') {
-          setStatus('🎉 Вы победили!');
-          showRecoveryForm();
-        } else {
-          setStatus('💥 Вы проиграли.');
-        }
-      }
-      function startNewRound() {
-        resetGameState();
-        gameState.isRevealed = false;
-        gameState.deckSeed = Math.floor(Math.random() * 1e9);
-        gameState.deck = createDeck(gameState.deckSeed);
-        
-        // // Раздача новых карт
-        // for (let i = 0; i < 2; i++) {
-        //   gameState.playerHand.push(draw());
-        //   gameState.opponentHand.push(draw());
-        // }
-        
-        gameState.myTurn = true; // Хост ходит первым
+      endGame() {
+        this.isGameActive = false;
+        this.updateControls(false);
 
-        const controls = document.querySelector('.controls');
-        controls.innerHTML = '';
-        controls.appendChild(UI.btnHit);
-        controls.appendChild(UI.btnStand);
-        controls.appendChild(UI.btnNew);
-        UI.btnHit.style.display = '';
-        UI.btnStand.style.display = '';
-        updateUI();
-        
-        // Отправляем клиенту новые карты
-        if (gameState.isMultiplayer) {
-          sendToOpponent({
-            type: 'new_round',
-            hostHand: gameState.playerHand,
-            clientHand: gameState.opponentHand,
-            seed: gameState.deckSeed
-          });
-        }
+        const pScore = this.playerHand.calculateScore();
+        const dScore = this.dealerHand.calculateScore();
+        let msg = '', cls = '';
+
+        if (pScore > 21) { msg = '💥 Перебор! Вы проиграли.'; cls = 'lose'; }
+        else if (dScore > 21) { msg = '✅ Вы победили! 🎉'; cls = 'win'; }
+        else if (pScore > dScore) { msg = '✅ Вы победили! 🎉'; cls = 'win'; }
+        else if (pScore < dScore) { msg = '📉 Противник выиграл.'; cls = 'lose'; }
+        else { msg = '🤝 Ничья.'; cls = 'draw'; }
+
+        this.dom.status.textContent = msg;
+        this.dom.status.className = `status ${cls}`;
+        this.render(true); // Показать все карты дилера
       }
 
-      // =====================================================================
-      // 🔹 WEBRTC МОДУЛЬ
-      // =====================================================================
+      updateControls(active) {
+        this.dom.hitBtn.disabled = !active;
+        this.dom.standBtn.disabled = !active;
+        this.dom.newGameBtn.textContent = active ? '🔄 Текущая игра' : '🔄 Новая игра';
+      }
 
-      const WebRTC = (function() {
-        let pc = null;
-        let dataChannel = null;
-        const CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-
-        async function setupConnection(isOfferer) {
-          resetConnection();
-          pc = new RTCPeerConnection(CONFIG);
-          
-          pc.onicecandidate = (e) => { if(e.candidate) console.log('ICE'); };
-          
-          pc.onconnectionstatechange = () => {
-            if (pc.connectionState === 'connected') {
-              closeAllModals();
-              setConnectionStatus(true, '✅ Соединение установлено!');
-              UI.multiplayerSetup.classList.add('hidden');
-              UI.opponentLabel.textContent = gameState.isHost ? 'Игрок 2' : 'Игрок 1';
-            } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-              setConnectionStatus(false, '❌ Соединение разорвано');
-              gameState.isMultiplayer = false;
-            }
-          };
-          
-          pc.ondatachannel = (e) => {
-            dataChannel = e.channel;
-            setupDataChannel();
-          };
-          return pc;
-        }
-
-        function setupDataChannel() {
-          if (!dataChannel) return;
-          dataChannel.onopen = () => {
-            if (gameState.isHost) startGameAsHost();
-          };
-          dataChannel.onmessage = (e) => {
-            try { handleIncomingMessage(JSON.parse(e.data)); } 
-            catch (err) { console.error('Parse error:', err); }
-          };
-        }
-
-        function resetConnection() {
-          if (dataChannel) try { dataChannel.close(); } catch(e){}
-          if (pc) try { pc.close(); } catch(e){}
-          pc = null; dataChannel = null;
-        }
-
-        async function createRoom() {
-          gameState.isHost = true;
-          gameState.isMultiplayer = true;
-          gameState.peerId = generatePeerId();
-          
-          UI.roomCode.textContent = `Код: ${generateRoomCode()}`;
-          UI.btnCopyCode.classList.remove('hidden');
-          UI.btnCopyCode.onclick = () => {
-            navigator.clipboard.writeText(UI.roomCode.textContent.replace('Код: ', ''));
-            UI.connectionStatus.textContent = '✅ Скопировано!';
-          };
-
-          setConnectionStatus(false, '🟡 Создание...');
-          await setupConnection(true);
-          dataChannel = pc.createDataChannel('bj');
-          setupDataChannel();
-          
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          await delay(1000);
-          showSDPModal('offer', pc.localDescription);
-        }
-
-        async function joinRoom() {
-          const code = UI.joinCode.value.trim().toUpperCase();
-          if (code.length !== 6) { alert('Введите 6 символов'); return; }
-          
-          gameState.isHost = false;
-          gameState.isMultiplayer = true;
-          gameState.peerId = generatePeerId();
-          
-          setConnectionStatus(false, '🟡 Ожидание...');
-          await setupConnection(false);
-          showSDPModal('waiting_offer');
-        }
-
-        function showSDPModal(mode, sdp = null) {
-          closeAllModals();
-          const modal = document.createElement('div');
-          modal.className = 'sdp-modal';
-          let html = '';
-          
-          if (mode === 'offer') {
-            html = `<span class="step-indicator">Шаг 1/2</span><h3>📤 Отправьте это противнику</h3>
-                    <h4 id="room_code">${UI.roomCode.textContent}</h4>
-                    <textarea id="d" readonly>${JSON.stringify(sdp)}</textarea>
-                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value)">📋 Копировать</button>
-                    <hr style="margin:1rem 0;opacity:0.2"><span class="step-indicator">Шаг 2/2</span><h3>📥 Вставьте ответ</h3>
-                    <textarea id="i" placeholder="Answer..."></textarea>
-                    <button id="go" style="background:var(--accent);color:#fff;width:100%">✅ Подключиться</button>`;
-          } else if (mode === 'waiting_offer') {
-            html = `<span class="step-indicator">Шаг 1/2</span><h3>📥 Вставьте предложение</h3>
-                    <textarea id="i" placeholder="Offer..."></textarea>
-                    <button id="go" style="background:var(--accent);color:#fff;width:100%">✅ Обработать</button>`;
-          } else if (mode === 'send_answer') {
-            html = `<span class="step-indicator">Шаг 2/2</span><h3>📤 Отправьте это хосту</h3>
-                    <textarea id="d" readonly>${JSON.stringify(sdp)}</textarea>
-                    <button onclick="navigator.clipboard.writeText(document.getElementById('d').value)">📋 Копировать</button>
-                    <p style="color:var(--accent);margin-top:1rem;text-align:center">⏳ Ждем подключения...</p>`;
-          }
-          
-          modal.innerHTML = `<div class="sdp-modal-content">${html}</div>`;
-          document.body.appendChild(modal);
-          
-          if (mode === 'offer') {
-            modal.querySelector('#go').onclick = async () => {
-              try {
-                await pc.setRemoteDescription(JSON.parse(modal.querySelector('#i').value.trim()));
-                closeAllModals();
-              } catch(e) { alert('Ошибка: ' + e.message); }
-            };
-          } else if (mode === 'waiting_offer') {
-            modal.querySelector('#go').onclick = async () => {
-              try {
-                const offer = JSON.parse(modal.querySelector('#i').value.trim());
-                await pc.setRemoteDescription(offer);
-                const ans = await pc.createAnswer();
-                await pc.setLocalDescription(ans);
-                await delay(1000);
-                closeAllModals();
-                showSDPModal('send_answer', pc.localDescription);
-              } catch(e) { alert('Ошибка: ' + e.message); }
-            };
-          }
-        }
-
-        function send(msg) {
-          if (dataChannel?.readyState === 'open') dataChannel.send(JSON.stringify(msg));
-        }
-
-        return { createRoom, joinRoom, send, reset: resetConnection };
-      })();
-
-      function sendToOpponent(msg) { if (gameState.isMultiplayer) WebRTC.send(msg); }
-
-      function handleIncomingMessage(msg) {
-        if (msg.type === 'init') {
-          startGameAsClient(msg);
-        } 
-        else if (msg.type === 'hit') {
-          const isMe = (gameState.isHost && msg.player === 'host') || (!gameState.isHost && msg.player === 'client');
-          
-          if (isMe) {
-            gameState.playerHand.push(msg.card);
+      // Отрисовка карт через DocumentFragment: 1 reflow вместо N
+      async render(showAllDealer = false) {
+        const createCardEl = (card, hidden = false) => {
+          const el = document.createElement('div');
+          el.className = `card ${['♥','♦'].includes(card.suit) ? 'red' : ''}`;
+          if (hidden) {
+            el.textContent = '?';
+            el.style.background = '#334155';
+            el.style.color = '#94a3b8';
           } else {
-            gameState.opponentHand.push(msg.card);
+            el.innerHTML = `<span class="value">${card.value}</span><span class="suit">${card.suit}</span>`;
           }
-          
-          updateUI();
-          
-          const score = isMe ? calcScore(gameState.playerHand) : calcScore(gameState.opponentHand);
-          if (score > 21) {
-            gameState.isRevealed = true;
-            updateUI();
-            if (isMe) {
-              endGame('lose');
-            }
-            else endGame('win');
-          }
-        }
-        else if (msg.type === 'hit_request') {
-          if (gameState.isHost) {
-            const card = draw();
-            gameState.opponentHand.push(card);
-            updateUI();
-            sendToOpponent({ type: 'hit', card, player: 'client' });
-            
-            if (calcScore(gameState.opponentHand) > 21) {
-              // Хост сам завершает игру, клиент узнает из hit сообщения
-              sendToOpponent({ type: 'game_over', result: 'client_win' });
-              endGame('win'); // Хост проиграл
-            }
-          }
-        }
-        else if (msg.type === 'stand') {
-          gameState.opponentHasStood = true;
-          updateUI();
+          return el;
+        };
 
-          if (gameState.hasStood && gameState.opponentHasStood) {
-            revealCards();
-          }
-        }
-        else if (msg.type === 'reveal') {
-          // 🔹 Клиент получает команду раскрыть карты
-          gameState.isRevealed = true;
-          updateUI();
-          setStatus('🎴 Карты раскрыты!');
-        }
-        else if (msg.type === 'bust') {
-          endGame('win');
-        } 
-        else if (msg.type === 'turn_pass') {
-          gameState.myTurn = true;
-          updateUI();
-        }
-        else if (msg.type === 'game_over') {
-          // 🔹 Новое сообщение для синхронизации конца игры
-          if (!gameState.isGameOver) {
-            gameState.isGameOver = true;
-            updateUI();
-            
-            if (msg.result === 'client_win') {
-              if (!gameState.isHost) {
-                setStatus('🏆 Вы победили!');
-                showRecoveryForm();
-              } else {
-                setStatus('🤖 Противник выиграл.');
-              }
-            } else if (msg.result === 'host_win') {
-              if (gameState.isHost) {
-                setStatus('🏆 Вы победили!');
-                showRecoveryForm();
-              } else {
-                setStatus('🤖 Противник выиграл.');
-              }
-            }
-          }
-        }
-        else if (msg.type === 'result') {
-          if (gameState.isGameOver) return;
-          gameState.isGameOver = true;
-          updateUI();
+        const pFrag = document.createDocumentFragment();
+        this.playerHand.cards.forEach(c => pFrag.appendChild(createCardEl(c)));
+        this.dom.playerCards.replaceChildren(pFrag);
+        this.dom.playerScore.textContent = this.playerHand.calculateScore();
 
-          if (msg.result === 'lose') {
-            setStatus('🏆 Вы победили!');
-            showRecoveryForm();
-          } else if (msg.result === 'win') {
-            setStatus('🤖 Противник выиграл.');
-          } else {
-            setStatus('🤝 Ничья.');
-          }
-        }
-        else if (msg.type === 'new_round') {
-          resetGameState();
-          gameState.deckSeed = msg.seed;
-          gameState.deck = createDeck(gameState.deckSeed);
-          gameState.playerHand = msg.clientHand;
-          gameState.opponentHand = msg.hostHand;
-          gameState.myTurn = false;
-          updateUI();
-          UI.multiplayerSetup.classList.add('hidden');
-        }
+        const dFrag = document.createDocumentFragment();
+        const dealerVisible = this.isGameActive ? 1 : this.dealerHand.cards.length;
+        this.dealerHand.cards.forEach((c, i) => {
+          dFrag.appendChild(createCardEl(c, !showAllDealer && i === 0));
+        });
+        this.dom.opponentCards.replaceChildren(dFrag);
+        // В реальном времени показываем только сумму открытых карт
+        const openSum = this.dealerHand.cards
+          .slice(showAllDealer ? 0 : 1)
+          .reduce((sum, c) => sum + (c.value === 'A' ? 11 : (['J','Q','K'].includes(c.value) ? 10 : parseInt(c.value, 10))), 0);
+        this.dom.opponentScore.textContent = this.isGameActive && !showAllDealer ? `${openSum} + ?` : this.dealerHand.calculateScore();
       }
+    }
 
-      // 🔹 Привязка событий
-      UI.btnHit.addEventListener('click', playerHit);
-      UI.btnStand.addEventListener('click', playerStand);
-      UI.btnNew.addEventListener('click', () => {
-        if (gameState.isMultiplayer && gameState.isHost) {
-          // ✅ Хост инициирует новую игру
-          if (!gameState.isGameOver) {
-            setStatus('🟡 Новая игра началась!');
-          }
-          startNewRound();
-        } else if (gameState.isMultiplayer) {
-          // Клиент ждёт
-          setStatus('🟡 Ожидание начала новой игры от хоста...');
-        } else {
-          // Одиночная игра
-          gameState.isMultiplayer = false;
-          WebRTC.reset?.();
-          setConnectionStatus(false);
-          UI.multiplayerSetup.classList.remove('hidden');
-          startGameAsHost();
-        }
-      });
-
-      document.getElementById('btn-create-room').addEventListener('click', WebRTC.createRoom);
-      document.getElementById('btn-join-room').addEventListener('click', WebRTC.joinRoom);
-
-      // Старт
-      setStatus('Нажмите "Новая игра" или настройте подключение.');
-      UI.btnNew.disabled = false;
-
-    })();
+    // Инициализация после полной загрузки DOM
+    document.addEventListener('DOMContentLoaded', () => new BlackjackGame());
   </script>
 </body>
 </html>

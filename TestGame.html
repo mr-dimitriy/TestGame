@@ -94,28 +94,50 @@
       width: 3.5rem; height: 5rem; background: #fff; color: #0f172a;
       border-radius: 6px; display: flex; flex-direction: column;
       align-items: center; justify-content: center; font-weight: bold;
-      box-shadow: 0 4px 6px -1px #0003; position: relative;
+      box-shadow: 0 4px 6px -1px #0003; position: relative; animation: slideIn 0.3s ease;
     }
+    .card.hidden {
+      background: linear-gradient(135deg, #334155 25%, #475569 25%, #475569 50%, #334155 50%, #334155 75%, #475569 75%, #475569 100%);
+      background-size: 10px 10px; color: #64748b; font-size: 1.5rem;
+    }
+
     .card.red { color: #ef4444; }
     .card .value { font-size: 1.2rem; }
     .card .suit { font-size: 1.5rem; }
 
     .score { margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary); }
 
-    /* === Status === 
-       Цвета меняются через CSS-классы, а не inline-стили: 
-       проще тестировать, поддерживает анимации и тему */
     .status { text-align: center; min-height: 2rem; }
     .status.win { color: var(--success); }
     .status.lose { color: var(--danger); }
     .status.draw { color: var(--warning); }
+
+    @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Модальное окно для SDP */
+    .sdp-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9);
+      display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem;
+    }
+    .sdp-modal-content {
+      background: var(--bg-card); padding: 1.5rem; border-radius: var(--radius);
+      max-width: 500px; width: 100%; text-align: left;
+    }
+    .sdp-modal textarea {
+      width: 100%; height: 100px; margin: 0.5rem 0; padding: 0.5rem; font-family: monospace;
+      font-size: 0.75rem; background: #0f172a; color: var(--text-primary);
+      border: 1px solid #334155; border-radius: 6px; resize: vertical;
+    }
+    .sdp-modal-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
+    .sdp-modal button { flex: 1; min-width: 100px; }
+    .step-indicator { font-size: 0.8rem; color: var(--accent); font-weight: bold; margin-bottom: 0.5rem; display: block; }
   </style>
 </head>
 <body>
   <div class="app">
     <header class="header">
       <h1>🃏 Blackjack 🃏</h1>
-      <span class="version">Fix 12 | Просто игра для отдыха</span>
+      <span class="version">Fix 13 | Просто игра для отдыха</span>
     </header>
 
     <section class="controls">
@@ -127,7 +149,7 @@
       <div class="room-controls" id="roomControls">
         <button class="btn btn--primary" id="createRoom">🏠 Создать комнату</button>
         <button class="btn btn--secondary" id="copyCode">📋 Скопировать код</button>
-        <input class="room-input" id="roomCodeInput" placeholder="🔗 Присоединиться (введите код)">
+        <input class="room-input" id="roomCodeInput" placeholder="🔗 Код комнаты (6 символов)" maxlength="6">
         <button class="btn btn--secondary" id="joinRoom">🔗 Войти</button>
       </div>
     </section>
@@ -135,11 +157,13 @@
     <section class="game-table">
       <div class="hands-grid">
         <div class="hand" id="opponentHand">
+          <div class="turn-badge">ХОД</div>
           <h3>Противник</h3>
           <div class="cards" id="opponentCards"></div>
           <div class="score" id="opponentScore">0</div>
         </div>
         <div class="hand" id="playerHand">
+          <div class="turn-badge">ВАШ ХОД</div>
           <h3>Вы</h3>
           <div class="cards" id="playerCards"></div>
           <div class="score" id="playerScore">0</div>
@@ -169,28 +193,92 @@
      * 4. Нет глобальных переменных, используются const/let, строгий режим включен неявно (ES6 modules/classes).
      */
 
-    class Deck {
-      constructor() {
-        this.cards = [];
-        const suits = ['♠', '♥', '♦', '♣'];
-        const values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-        for (const s of suits) for (const v of values) this.cards.push({ suit: s, value: v });
-        this.shuffle();
+    class WebRTCManager {
+      constructor(onMessage, onConnected) {
+        this.pc = null;
+        this.dc = null;
+        this.isHost = false;
+        this.onMessage = onMessage;
+        this.onConnected = onConnected;
+        this.iceCandidates = [];
       }
-      // Fisher-Yates: O(n), равномерное распределение, минимум памяти
-      shuffle() {
+
+      async createOffer() {
+        this.isHost = true;
+        await this._setupPC();
+        this.dc = this.pc.createDataChannel('bj');
+        this._setupDC();
+        const offer = await this.pc.createOffer();
+        await this.pc.setLocalDescription(offer);
+        await this._waitICE(1000);
+        return { type: 'offer', sdp: this.pc.localDescription, code: this._genCode() };
+      }
+
+      async handleOffer(offer) {
+        this.isHost = false;
+        await this._setupPC();
+        await this.pc.setRemoteDescription(offer.sdp);
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        await this._waitICE(1000);
+        return { type: 'answer', sdp: this.pc.localDescription };
+      }
+
+      async handleAnswer(answer) {
+        await this.pc.setRemoteDescription(answer.sdp);
+      }
+
+      send(msg) {
+        if (this.dc?.readyState === 'open') this.dc.send(JSON.stringify(msg));
+      }
+
+      async _setupPC() {
+        this.pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        this.pc.onicecandidate = e => { if (e.candidate) this.iceCandidates.push(e.candidate); };
+        this.pc.onconnectionstatechange = () => {
+          if (this.pc.connectionState === 'connected' && this.onConnected) this.onConnected();
+        };
+        this.pc.ondatachannel = e => { this.dc = e.channel; this._setupDC(); };
+      }
+
+      _setupDC() {
+        if (!this.dc) return;
+        this.dc.onmessage = e => { try { this.onMessage(JSON.parse(e.data)); } catch(err) {} };
+        this.dc.onopen = () => { if (this.isHost && this.onConnected) this.onConnected(); };
+      }
+
+      _waitICE(ms) { return new Promise(r => setTimeout(r, ms)); }
+      _genCode() { return Math.random().toString(36).substring(2,8).toUpperCase(); }
+
+      close() {
+        if (this.dc) try { this.dc.close(); } catch(e){}
+        if (this.pc) try { this.pc.close(); } catch(e){}
+        this.pc = null; this.dc = null;
+      }
+    }
+
+class Deck {
+      constructor(seed = null) {
+        this.cards = [];
+        this.seed = seed || Math.floor(Math.random() * 1e9);
+        const suits = ['♠','♥','♦','♣'], values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+        for (const s of suits) for (const v of values) this.cards.push({ suit: s, value: v });
+        this._shuffleWithSeed(this.seed);
+      }
+      _shuffleWithSeed(seed) {
+        let rand = seed;
+        const seeded = () => { const x = Math.sin(rand++) * 10000; return x - Math.floor(x); };
         for (let i = this.cards.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
+          const j = Math.floor(seeded() * (i + 1));
           [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
         }
       }
       draw() { return this.cards.pop(); }
     }
 
-    class Hand {
+     class Hand {
       constructor() { this.cards = []; }
       add(card) { this.cards.push(card); }
-      // Расчёт очков с корректной обработкой тузов (1 или 11)
       calculateScore() {
         let score = 0, aces = 0;
         for (const c of this.cards) {
@@ -201,7 +289,6 @@
         while (score > 21 && aces > 0) { score -= 10; aces--; }
         return score;
       }
-      isBlackjack() { return this.cards.length === 2 && this.calculateScore() === 21; }
       isBusted() { return this.calculateScore() > 21; }
     }
 
@@ -212,13 +299,18 @@
         this.dealerHand = new Hand();
         this.mode = 'offline';
         this.isGameActive = false;
+        this.isMultiplayer = false;
+        this.isHost = false;
+        this.myTurn = false;
+        this.hasStood = false;
+        this.opponentHasStood = false;
+        this.isRevealed = false;
+        this.webrtc = null;
         this.roomCode = null;
-        this.ws = null; // Заглушка для WebSocket
         this.cacheDOM();
         this.bindEvents();
       }
 
-      // Кэширование узлов DOM ускоряет доступ и уменьшает reflow
       cacheDOM() {
         this.dom = {
           modeBtns: document.querySelectorAll('.mode-btn'),
@@ -231,6 +323,8 @@
           opponentCards: document.getElementById('opponentCards'),
           playerScore: document.getElementById('playerScore'),
           opponentScore: document.getElementById('opponentScore'),
+          playerHand: document.getElementById('playerHand'),
+          opponentHand: document.getElementById('opponentHand'),
           hitBtn: document.getElementById('hitBtn'),
           standBtn: document.getElementById('standBtn'),
           newGameBtn: document.getElementById('newGameBtn'),
@@ -238,7 +332,6 @@
         };
       }
 
-      // Делегирование событий уменьшает количество слушателей и память
       bindEvents() {
         this.dom.modeBtns.forEach(btn => btn.addEventListener('click', e => this.toggleMode(e)));
         this.dom.createRoom.addEventListener('click', () => this.createRoom());
@@ -253,139 +346,354 @@
         this.mode = e.target.dataset.mode;
         this.dom.modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === this.mode));
         this.dom.roomControls.classList.toggle('visible', this.mode === 'online');
-        this.dom.status.textContent = this.mode === 'online' ? 'Режим онлайн: создайте или войдите в комнату.' : 'Оффлайн-режим активен.';
+        this._setStatus(this.mode === 'online' ? 'Онлайн: создайте или войдите в комнату' : 'Оффлайн-режим');
       }
 
-      // Генерация 6-символьного кода: base36 компактен, коллизии минимальны для демо
-      createRoom() {
-        this.roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-        this.dom.roomInput.value = '';
-        this.dom.status.textContent = `Код комнаты: ${this.roomCode}`;
-        // TODO: инициализация WebSocket сервера здесь
+      _setStatus(msg, cls = '') {
+        this.dom.status.textContent = msg;
+        this.dom.status.className = `status ${cls}`;
+      }
+
+      // 🔹 Онлайн: создание комнаты
+      async createRoom() {
+        if (!this.webrtc) this.webrtc = new WebRTCManager(msg => this._handleMessage(msg), () => this._onConnected());
+        const offer = await this.webrtc.createOffer();
+        this.roomCode = offer.code;
+        this.isHost = true;
+        this.isMultiplayer = true;
+        this._showSDPModal('offer', offer, async (answer) => {
+          await this.webrtc.handleAnswer(answer);
+        });
+        this._setStatus('🟡 Ожидание подключения...');
+      }
+
+      // 🔹 Онлайн: вход в комнату
+      async joinRoom() {
+        const code = this.dom.roomInput.value.trim().toUpperCase();
+        if (code.length !== 6) return this._setStatus('❌ Код должен быть 6 символов');
+        
+        if (!this.webrtc) this.webrtc = new WebRTCManager(msg => this._handleMessage(msg), () => this._onConnected());
+        this._showSDPModal('waiting', null, async (offer) => {
+          const answer = await this.webrtc.handleOffer(offer);
+          this._showSDPModal('sendAnswer', answer);
+          this.roomCode = code;
+          this.isHost = false;
+          this.isMultiplayer = true;
+        });
+        this._setStatus('🟡 Ожидание предложения от хоста...');
       }
 
       copyRoomCode() {
-        if (!this.roomCode) return this.dom.status.textContent = 'Сначала создайте комнату.';
-        navigator.clipboard.writeText(this.roomCode).then(() => {
-          this.dom.status.textContent = 'Код скопирован!';
-        }).catch(() => this.dom.status.textContent = 'Не удалось скопировать.');
+        if (!this.roomCode) return;
+        navigator.clipboard.writeText(this.roomCode).then(() => this._setStatus('✅ Код скопирован!'));
       }
 
-      joinRoom() {
-        const code = this.dom.roomInput.value.trim();
-        if (!code) return this.dom.status.textContent = 'Введите код комнаты.';
-        this.roomCode = code;
-        this.dom.status.textContent = `Подключение к ${code}...`;
-        // TODO: handshake с сервером
+      // 🔹 Модальное окно для обмена ключами
+      _showSDPModal(mode, data, callback) {
+        const modal = document.createElement('div');
+        modal.className = 'sdp-modal';
+        let html = '';
+        
+        if (mode === 'offer') {
+          html = `<span class="step-indicator">Шаг 1/2</span><h3>📤 Отправьте это противнику</h3>
+                  <h4>Код комнаты: ${data.code}</h4>
+                  <textarea id="sdp-data" readonly>${JSON.stringify(data)}</textarea>
+                  <button class="btn btn--primary" onclick="navigator.clipboard.writeText(document.getElementById('sdp-data').value);alert('Скопировано!')">📋 Копировать</button>
+                  <hr style="margin:1rem 0;opacity:0.2"><span class="step-indicator">Шаг 2/2</span><h3>📥 Вставьте ответ</h3>
+                  <textarea id="sdp-input" placeholder="Вставьте answer сюда..."></textarea>
+                  <button id="sdp-go" class="btn btn--success" style="width:100%">✅ Подключиться</button>`;
+        } else if (mode === 'waiting') {
+          html = `<span class="step-indicator">Шаг 1/2</span><h3>📥 Вставьте предложение</h3>
+                  <textarea id="sdp-input" placeholder="Вставьте offer от хоста..."></textarea>
+                  <button id="sdp-go" class="btn btn--success" style="width:100%">✅ Обработать</button>`;
+        } else if (mode === 'sendAnswer') {
+          html = `<span class="step-indicator">Шаг 2/2</span><h3>📤 Отправьте это хосту</h3>
+                  <textarea id="sdp-data" readonly>${JSON.stringify(data)}</textarea>
+                  <button class="btn btn--primary" onclick="navigator.clipboard.writeText(document.getElementById('sdp-data').value);alert('Отправьте хосту!')">📋 Копировать</button>
+                  <p style="color:var(--success);margin-top:1rem;text-align:center">⏳ Соединение устанавливается...</p>`;
+        }
+        
+        modal.innerHTML = `<div class="sdp-modal-content">${html}</div>`;
+        document.body.appendChild(modal);
+        
+        const goBtn = modal.querySelector('#sdp-go');
+        if (goBtn) {
+          goBtn.onclick = async () => {
+            try {
+              const val = JSON.parse(modal.querySelector('#sdp-input').value.trim());
+              if (callback) await callback(val);
+              modal.remove();
+            } catch(e) { alert('Ошибка: ' + e.message); }
+          };
+        }
+        modal.querySelector('.sdp-modal-content').addEventListener('click', e => e.stopPropagation());
+        modal.onclick = () => { if (mode !== 'sendAnswer') modal.remove(); };
       }
 
-      startGame() {
+      _onConnected() {
+        this._setStatus('✅ Соединение установлено!');
+        if (this.isHost) this._startGameAsHost();
+      }
+
+      _startGameAsHost() {
+        this._resetGame();
         this.deck = new Deck();
+        this.deckSeed = this.deck.seed;
+        
+        // Начальная раздача (по 0 карт — начинаем с пустыми руками)
+        this.myTurn = true;
+        this._render();
+        this._updateControls(true);
+        
+        // Отправляем клиенту начальное состояние
+        this.webrtc.send({
+          type: 'init',
+          seed: this.deckSeed,
+          hostHand: [],
+          clientHand: []
+        });
+      }
+
+      _startGameAsClient(msg) {
+        this._resetGame();
+        this.deck = new Deck(msg.seed);
+        this.deckSeed = msg.seed;
+        this.playerHand = new Hand();
+        this.dealerHand = new Hand();
+        // Карты придут через hit-сообщения
+        this.myTurn = false;
+        this._render();
+        this._updateControls(false);
+      }
+
+      _resetGame() {
         this.playerHand = new Hand();
         this.dealerHand = new Hand();
         this.isGameActive = true;
-
-        // Раздача по 2 карты
-        // this.playerHand.add(this.deck.draw());
-        // this.dealerHand.add(this.deck.draw());
-        // this.playerHand.add(this.deck.draw());
-        // this.dealerHand.add(this.deck.draw());
-
-        this.render();
-        this.updateControls(true);
-        this.dom.status.textContent = 'ВАШ ХОД';
-        this.dom.status.className = 'status';
-
-        // Проверка блэкджека при старте
-        if (this.playerHand.isBlackjack() || this.dealerHand.isBlackjack()) {
-          this.endGame();
-        }
+        this.hasStood = false;
+        this.opponentHasStood = false;
+        this.isRevealed = false;
+        this.dom.roomControls.classList.remove('visible');
       }
 
+      // 🔹 Ход игрока: взять карту
       hit() {
-        if (!this.isGameActive) return;
-        this.playerHand.add(this.deck.draw());
-        this.render();
-        if (this.playerHand.isBusted()) this.endGame();
-      }
-
-      async stand() {
-        if (!this.isGameActive) return;
+        if (!this.isGameActive || !this.myTurn) return;
         
-        while (this.dealerHand.calculateScore() < 17) {
-          await this.delay(400);
+        if (this.isMultiplayer && !this.isHost) {
+          // Клиент запрашивает карту у хоста
+          this.webrtc.send({ type: 'hit_request' });
+        } else {
+          // Хост или оффлайн: берём карту
+          const card = this.deck.draw();
+          this.playerHand.add(card);
+          this._render();
           
-          this.dealerHand.add(this.deck.draw());
-          this.render();
-        }
-        await this.delay(300);
-        this.endGame();
-      }
-      
-      delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-      }
-
-      endGame() {
-        this.isGameActive = false;
-        this.updateControls(false);
-
-        const pScore = this.playerHand.calculateScore();
-        const dScore = this.dealerHand.calculateScore();
-        let msg = '', cls = '';
-
-        if (pScore > 21) { msg = '💥 Перебор! Вы проиграли.'; cls = 'lose'; }
-        else if (dScore > 21) { msg = '✅ Вы победили! 🎉'; cls = 'win'; }
-        else if (pScore > dScore) { msg = '✅ Вы победили! 🎉'; cls = 'win'; }
-        else if (pScore < dScore) { msg = '📉 Противник выиграл.'; cls = 'lose'; }
-        else { msg = '🤝 Ничья.'; cls = 'draw'; }
-
-        this.dom.status.textContent = msg;
-        this.dom.status.className = `status ${cls}`;
-        this.render(true); // Показать все карты дилера
-      }
-
-      updateControls(active) {
-        this.dom.hitBtn.disabled = !active;
-        this.dom.standBtn.disabled = !active;
-        this.dom.newGameBtn.textContent = active ? '🔄 Текущая игра' : '🔄 Новая игра';
-      }
-
-      // Отрисовка карт через DocumentFragment: 1 reflow вместо N
-      async render(showAllDealer = false) {
-        const createCardEl = (card, hidden = false) => {
-          const el = document.createElement('div');
-          el.className = `card ${['♥','♦'].includes(card.suit) ? 'red' : ''}`;
-          if (hidden) {
-            el.textContent = '?';
-            el.style.background = '#334155';
-            el.style.color = '#94a3b8';
-          } else {
-            el.innerHTML = `<span class="value">${card.value}</span><span class="suit">${card.suit}</span>`;
+          if (this.isMultiplayer) {
+            this.webrtc.send({ type: 'hit', card, player: this.isHost ? 'host' : 'client' });
           }
-          return el;
-        };
+          
+          if (this.playerHand.isBusted()) {
+            this.isRevealed = true;
+            this._render();
+            if (this.isMultiplayer) this.webrtc.send({ type: 'game_over', result: this.isHost ? 'client_win' : 'host_win' });
+            this._endGame(this.isHost ? 'lose' : 'win');
+          } else {
+            // 🔹 Авто-передача хода после взятия карты
+            this.myTurn = false;
+            this._render();
+            if (this.isMultiplayer) this.webrtc.send({ type: 'turn_pass' });
+          }
+        }
+      }
 
-        const pFrag = document.createDocumentFragment();
-        this.playerHand.cards.forEach(c => pFrag.appendChild(createCardEl(c)));
-        this.dom.playerCards.replaceChildren(pFrag);
+      // 🔹 Ход игрока: остановиться
+      async stand() {
+        if (!this.isGameActive || !this.myTurn) return;
+        
+        this.hasStood = true;
+        this.myTurn = false;
+        this._render();
+        
+        if (this.isMultiplayer) {
+          this.webrtc.send({ type: 'stand' });
+          if (this.hasStood && this.opponentHasStood) this._revealAndCompare();
+        } else {
+          // 🔹 Оффлайн: ход бота
+          await this._dealerTurn();
+          this._revealAndCompare();
+        }
+      }
+
+      // 🔹 Ход бота (оффлайн)
+      async _dealerTurn() {
+        while (this.dealerHand.calculateScore() < 17 && this.isGameActive) {
+          await this._delay(700);
+          const card = this.deck.draw();
+          this.dealerHand.add(card);
+          this._render();
+        }
+        await this._delay(300);
+      }
+
+      // 🔹 Раскрытие карт и сравнение
+      _revealAndCompare() {
+        this.isRevealed = true;
+        this._render();
+        setTimeout(() => this._endGame(), 500);
+      }
+
+      _endGame(localResult = null) {
+        this.isGameActive = false;
+        this._updateControls(false);
+        
+        const p = this.playerHand.calculateScore();
+        const d = this.dealerHand.calculateScore();
+        let msg = '', cls = '';
+        
+        if (localResult === 'win') { msg = '🏆 Вы победили!'; cls = 'win'; }
+        else if (localResult === 'lose') { msg = '💥 Вы проиграли.'; cls = 'lose'; }
+        else if (p > 21) { msg = '💥 Перебор!'; cls = 'lose'; }
+        else if (d > 21) { msg = '🎉 Противник перебрал!'; cls = 'win'; }
+        else if (p > d) { msg = '🏆 Вы победили!'; cls = 'win'; }
+        else if (p < d) { msg = '📉 Противник выиграл.'; cls = 'lose'; }
+        else { msg = '🤝 Ничья.'; cls = 'draw'; }
+        
+        this._setStatus(msg, cls);
+        
+        if (this.isMultiplayer && localResult) {
+          this.webrtc.send({ type: 'result', result: localResult });
+        }
+      }
+
+      _updateControls(active) {
+        this.dom.hitBtn.disabled = !active || !this.myTurn;
+        this.dom.standBtn.disabled = !active || !this.myTurn;
+        this.dom.playerHand.classList.toggle('active', this.myTurn && this.isGameActive);
+        this.dom.opponentHand.classList.toggle('active', !this.myTurn && this.isGameActive);
+      }
+
+      // 🔹 Отрисовка с поддержкой скрытых карт
+      _render() {
+        // Игрок: всегда видим свои карты
+        this.dom.playerCards.innerHTML = '';
+        this.playerHand.cards.forEach(c => this.dom.playerCards.appendChild(this._createCardEl(c)));
         this.dom.playerScore.textContent = this.playerHand.calculateScore();
+        
+        // Противник: скрыто, если не раскрыто
+        this.dom.opponentCards.innerHTML = '';
+        if (this.isRevealed) {
+          this.dealerHand.cards.forEach(c => this.dom.opponentCards.appendChild(this._createCardEl(c)));
+          this.dom.opponentScore.textContent = this.dealerHand.calculateScore();
+        } else {
+          // Показываем рубашки
+          const count = this.dealerHand.cards.length || 2;
+          for (let i = 0; i < count; i++) {
+            const el = document.createElement('div');
+            el.className = 'card hidden';
+            el.textContent = '🂠';
+            this.dom.opponentCards.appendChild(el);
+          }
+          this.dom.opponentScore.textContent = '?';
+        }
+        
+        this._updateControls(this.isGameActive);
+      }
 
-        const dFrag = document.createDocumentFragment();
-        const dealerVisible = this.isGameActive ? 1 : this.dealerHand.cards.length;
-        this.dealerHand.cards.forEach((c, i) => {
-          dFrag.appendChild(createCardEl(c, !showAllDealer && i === 0));
-        });
-        this.dom.opponentCards.replaceChildren(dFrag);
-        // В реальном времени показываем только сумму открытых карт
-        const openSum = this.dealerHand.cards
-          .slice(showAllDealer ? 0 : 1)
-          .reduce((sum, c) => sum + (c.value === 'A' ? 11 : (['J','Q','K'].includes(c.value) ? 10 : parseInt(c.value, 10))), 0);
-        this.dom.opponentScore.textContent = this.isGameActive && !showAllDealer ? `${openSum} + ?` : this.dealerHand.calculateScore();
+      _createCardEl(card) {
+        const el = document.createElement('div');
+        el.className = `card ${['♥','♦'].includes(card.suit) ? 'red' : ''}`;
+        el.innerHTML = `<span class="value">${card.value}</span><span class="suit">${card.suit}</span>`;
+        return el;
+      }
+
+      _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+      // 🔹 Обработка сообщений от противника
+      _handleMessage(msg) {
+        switch (msg.type) {
+          case 'init':
+            this._startGameAsClient(msg);
+            break;
+          case 'hit':
+            // Получили карту: определяем, кому она
+            const isMe = (this.isHost && msg.player === 'host') || (!this.isHost && msg.player === 'client');
+            if (isMe) this.playerHand.add(msg.card);
+            else this.dealerHand.add(msg.card);
+            this._render();
+            
+            if ((isMe ? this.playerHand : this.dealerHand).isBusted()) {
+              this.isRevealed = true;
+              this._render();
+              this._endGame(isMe ? 'lose' : 'win');
+            } else if (isMe && this.isMultiplayer) {
+              // 🔹 Авто-передача хода после получения карты
+              this.myTurn = true;
+              this._render();
+            }
+            break;
+          case 'hit_request':
+            if (this.isHost && this.isGameActive) {
+              const card = this.deck.draw();
+              this.dealerHand.add(card); // Для хоста клиент = dealerHand
+              this._render();
+              this.webrtc.send({ type: 'hit', card, player: 'client' });
+              if (this.dealerHand.isBusted()) {
+                this.webrtc.send({ type: 'game_over', result: 'client_win' });
+                this._endGame('win');
+              }
+            }
+            break;
+          case 'stand':
+            this.opponentHasStood = true;
+            this._render();
+            if (this.hasStood && this.opponentHasStood) this._revealAndCompare();
+            else if (!this.isGameOver) { this.myTurn = true; this._render(); }
+            break;
+          case 'turn_pass':
+            this.myTurn = true;
+            this._render();
+            break;
+          case 'game_over':
+            if (!this.isGameOver) {
+              this.isRevealed = true;
+              this._render();
+              this._endGame(msg.result === 'client_win' ? (!this.isHost ? 'win' : 'lose') : (this.isHost ? 'win' : 'lose'));
+            }
+            break;
+          case 'result':
+            if (!this.isGameOver) {
+              this.isRevealed = true;
+              this._render();
+              this._endGame(msg.result === 'lose' ? 'win' : 'lose');
+            }
+            break;
+        }
+      }
+
+      startGame() {
+        if (this.isMultiplayer && this.isHost) {
+          this._startGameAsHost();
+        } else if (this.isMultiplayer) {
+          this._setStatus('🟡 Ожидание начала от хоста...');
+        } else {
+          // Оффлайн
+          if (this.webrtc) { this.webrtc.close(); this.webrtc = null; }
+          this.isMultiplayer = false;
+          this.mode = 'offline';
+          this.dom.modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === 'offline'));
+          this.dom.roomControls.classList.remove('visible');
+          this._resetGame();
+          this.deck = new Deck();
+          this.myTurn = true;
+          this._render();
+          this._updateControls(true);
+          this._setStatus('ВАШ ХОД');
+        }
       }
     }
 
-    // Инициализация после полной загрузки DOM
+    // Инициализация
     document.addEventListener('DOMContentLoaded', () => new BlackjackGame());
   </script>
 </body>
